@@ -1,0 +1,71 @@
+{
+  "name": "just-map",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./modules/render": {
+      "types": "./dist/modules/render/index.d.ts",
+      "import": "./dist/modules/render/index.js"
+    },
+    "./modules/terrain": {
+      "types": "./dist/modules/terrain/index.d.ts",
+      "import": "./dist/modules/terrain/index.js"
+    },
+    "./modules/data": {
+      "types": "./dist/modules/data/index.d.ts",
+      "import": "./dist/modules/data/index.js"
+    },
+    "./modules/animation": {
+      "types": "./dist/modules/animation/index.d.ts",
+      "import": "./dist/modules/animation/index.js"
+    },
+    "./modules/navigation": {
+      "types": "./dist/modules/navigation/index.d.ts",
+      "import": "./dist/modules/navigation/index.js"
+    },
+    "./presets": {
+      "types": "./dist/presets/index.d.ts",
+      "import": "./dist/presets/index.js"
+    },
+    "./matching": {
+      "types": "./dist/matching/index.d.ts",
+      "import": "./dist/matching/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "peerDependencies": {
+    "maplibre-gl": "^5.0.0",
+    "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "bun-types": "^1.4.2",
+    "maplibre-gl": "^5.0.0",
+    "react": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.9.0"
+  }
+}

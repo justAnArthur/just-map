@@ -1,0 +1,10 @@
+{
+  "name": "just-map-repo",
+  "private": true,
+  "workspaces": ["packages/*", "examples/*"],
+  "scripts": {
+    "build": "bun --cwd packages/just-map run build",
+    "test": "bun --cwd packages/just-map test",
+    "typecheck": "bun --cwd packages/just-map run typecheck"
+  }
+}

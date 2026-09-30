@@ -1,0 +1,82 @@
+* {
+  margin: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.app {
+  position: fixed;
+  inset: 0;
+  font: 14px/1.45 system-ui, sans-serif;
+}
+
+.card {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 2;
+  width: 264px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(9, 14, 22, 0.86);
+  backdrop-filter: blur(8px);
+  color: #e2e8f0;
+}
+
+.card h1 {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.fixes,
+.note {
+  color: #94a3b8;
+  font-size: 12.5px;
+}
+
+.badge {
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.16);
+  color: #7dd3fc;
+  font-size: 12px;
+}
+
+.card button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #38bdf8;
+  color: #06222f;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.card button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #cbd5e1;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.error {
+  color: #fca5a5;
+  font-size: 12.5px;
+}

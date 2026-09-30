@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "paths": {
+      "just-map": ["../../packages/just-map/src/index.ts"],
+      "just-map/react": ["../../packages/just-map/src/react/index.tsx"],
+      "just-map/core": ["../../packages/just-map/src/core/index.ts"],
+      "just-map/presets": ["../../packages/just-map/src/presets/index.ts"],
+      "just-map/matching": ["../../packages/just-map/src/matching/index.ts"],
+      "just-map/modules/*": ["../../packages/just-map/src/modules/*/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}
