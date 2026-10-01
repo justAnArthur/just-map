@@ -14,6 +14,7 @@ examples/playground   kitchen sink: every module, toggle/slider per option
 examples/gps-matching raw GPS breadcrumbs vs road-snapped routes (OSRM /match)
 examples/outdoor      terrain-first: globe, big exaggeration, mountain track
 examples/fleet        real-time + history vehicle tracking in one app
+examples/zones        geofence editing + point markers (flat 2D)
 ```
 
 ```sh
@@ -22,7 +23,7 @@ bun run build       # builds packages/just-map (tsup, ESM + d.ts)
 bun run test        # bun:test unit tests
 bun run typecheck
 
-cd examples/basic && bun dev   # each example is a standalone Vite app (ports 5191-5195)
+cd examples/basic && bun dev   # each example is a standalone Vite app (ports 5191-5196)
 ```
 
 ## Releases

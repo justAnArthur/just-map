@@ -76,7 +76,7 @@ For a full runnable app, see the `examples/` folder in the repo — `basic` is t
 | `@justanarthur/just-map/core` | `JustMapEngine` (vanilla engine + escape hatch: `engine.map`) |
 | `@justanarthur/just-map/modules/render` | `Render`, `Style` |
 | `@justanarthur/just-map/modules/terrain` | `Terrain`, `Buildings` |
-| `@justanarthur/just-map/modules/data` | `Tracks`, `Breadcrumbs` |
+| `@justanarthur/just-map/modules/data` | `Tracks`, `Breadcrumbs`, `Markers`, `ZoneEditor` |
 | `@justanarthur/just-map/modules/animation` | `Playback`, `FollowCam` |
 | `@justanarthur/just-map/modules/navigation` | `Gestures`, `Navigation` |
 | `@justanarthur/just-map/presets` | `presets.googleEarth / flat / history / realtime` |
@@ -155,7 +155,14 @@ choreography (idle/glow/active/dash layers), start/end markers, fit-on-select, c
 
 **`Breadcrumbs`** — the raw GPS truth: sparse-fix line + dots overlay (`fixes`, `color`, `visible`).
 
-Roadmap: `Markers`, `Zones` (geofence editing), `Clusters`, `Heatmap`.
+**`Markers`** — a handful of DOM dots with optional plain-text popups (`points`, `fit`); vehicle
+positions, points of interest.
+
+**`ZoneEditor`** — interactive geofence editing: click the map to insert a vertex into the nearest
+edge, drag vertices, click one to delete (`ring`, `readonly`, `color`, `onChange` per commit).
+Undo/redo belongs to the consuming app.
+
+Roadmap: `Clusters`, `Heatmap`.
 
 ### animation — motion
 

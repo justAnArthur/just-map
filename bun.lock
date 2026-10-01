@@ -85,6 +85,22 @@
         "vite": "^7.0.0",
       },
     },
+    "examples/zones": {
+      "name": "just-map-example-zones",
+      "dependencies": {
+        "@justanarthur/just-map": "workspace:*",
+        "maplibre-gl": "^5.0.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+      },
+      "devDependencies": {
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^5.0.0",
+        "typescript": "^5.9.0",
+        "vite": "^7.0.0",
+      },
+    },
     "packages/just-map": {
       "name": "@justanarthur/just-map",
       "version": "0.2.0",
@@ -369,6 +385,8 @@
     "just-map-example-outdoor": ["just-map-example-outdoor@workspace:examples/outdoor"],
 
     "just-map-example-playground": ["just-map-example-playground@workspace:examples/playground"],
+
+    "just-map-example-zones": ["just-map-example-zones@workspace:examples/zones"],
 
     "kdbush": ["kdbush@4.1.0", "", {}, "sha512-e9vurzrXJQrFX6ckpHP3bvj5l+9CnYzkxDNnNQ1h2QTqdWsUAJgXiKdGNcOa1EY85dU8KbQ+z/FdQdB7P+9yfQ=="],
 

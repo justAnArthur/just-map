@@ -1,0 +1,105 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  font: 14px/1.45 system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+}
+
+.sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  padding: 16px;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.sidebar h1 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.sidebar p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toolbar button {
+  font: inherit;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.toolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.toolbar button.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.swatches {
+  display: flex;
+  gap: 8px;
+}
+
+.swatches button {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.swatches button.active {
+  border-color: #0f172a;
+}
+
+.map-wrap {
+  position: relative;
+  flex: 1;
+}
+
+.map-container {
+  position: absolute;
+  inset: 0;
+}
+
+.map-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 1;
+  background: rgb(15 23 42 / 0.65);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  pointer-events: none;
+}
