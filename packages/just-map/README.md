@@ -1,15 +1,30 @@
-# just-map
+# @justanarthur/just-map
 
 A modular 3D map library on [MapLibre GL JS](https://maplibre.org/) — Swiper-style composition.
 Import the domains you need, configure modules inline with their settings, and the map assembles itself.
 
+## Install
+
+```sh
+npm install @justanarthur/just-map maplibre-gl react
+```
+
+Peer dependencies: `maplibre-gl ^5` (required) and `react ^19` (only if you use `just-map/react`).
+The library ships zero CSS — import MapLibre's own stylesheet once in your app entry:
+
+```ts
+import 'maplibre-gl/dist/maplibre-gl.css'
+```
+
+## Quick start (React)
+
 ```tsx
-import { JustMap } from 'just-map/react'
-import { Render } from 'just-map/modules/render'
-import { Terrain, Buildings } from 'just-map/modules/terrain'
-import { Tracks } from 'just-map/modules/data'
-import { Playback, FollowCam } from 'just-map/modules/animation'
-import { Gestures } from 'just-map/modules/navigation'
+import { JustMap } from '@justanarthur/just-map/react'
+import { Render } from '@justanarthur/just-map/modules/render'
+import { Terrain, Buildings } from '@justanarthur/just-map/modules/terrain'
+import { Tracks } from '@justanarthur/just-map/modules/data'
+import { Playback, FollowCam } from '@justanarthur/just-map/modules/animation'
+import { Gestures } from '@justanarthur/just-map/modules/navigation'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 <JustMap
@@ -26,30 +41,48 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 />
 ```
 
-Vanilla usage works the same way (`just-map/core`):
+## Quick start (vanilla)
+
+Same module factories, same engine (`@justanarthur/just-map/core`):
 
 ```ts
-import { JustMapEngine } from 'just-map/core'
+import { JustMapEngine } from '@justanarthur/just-map/core'
+import { Render } from '@justanarthur/just-map/modules/render'
+import { Terrain } from '@justanarthur/just-map/modules/terrain'
 
 const engine = new JustMapEngine('#map', { modules: [Render(), Terrain()] })
 engine.ready.then(() => engine.map.flyTo({ center: [20.05, 49.1], zoom: 12 }))
 ```
 
+## Quick start (preset)
+
+One spread gives you a full opinionated setup — pick `googleEarth`, `flat`, `history` or `realtime`,
+and override any module:
+
+```tsx
+import { presets } from '@justanarthur/just-map/presets'
+
+<JustMap {...presets.googleEarth({ terrain: { exaggeration: 2 } })} />
+```
+
+For a full runnable app, see the `examples/` folder in the repo — `basic` is the styling playground
+(map/hybrid/satellite switcher), `fleet` is a complete live + history tracking app.
+
 ## Packages
 
 | Subpath | Exports |
 |---|---|
-| `just-map/react` | `<JustMap>`, `useJustMap` |
-| `just-map/core` | `JustMapEngine` (vanilla engine + escape hatch: `engine.map`) |
-| `just-map/modules/render` | `Render`, `Style` |
-| `just-map/modules/terrain` | `Terrain`, `Buildings` |
-| `just-map/modules/data` | `Tracks`, `Breadcrumbs` |
-| `just-map/modules/animation` | `Playback`, `FollowCam` |
-| `just-map/modules/navigation` | `Gestures`, `Navigation` |
-| `just-map/presets` | `presets.googleEarth / flat / history / realtime` |
-| `just-map/matching` | `snapToRoad`, `fromGpsFixes` |
+| `@justanarthur/just-map/react` | `<JustMap>`, `useJustMap` |
+| `@justanarthur/just-map/core` | `JustMapEngine` (vanilla engine + escape hatch: `engine.map`) |
+| `@justanarthur/just-map/modules/render` | `Render`, `Style` |
+| `@justanarthur/just-map/modules/terrain` | `Terrain`, `Buildings` |
+| `@justanarthur/just-map/modules/data` | `Tracks`, `Breadcrumbs` |
+| `@justanarthur/just-map/modules/animation` | `Playback`, `FollowCam` |
+| `@justanarthur/just-map/modules/navigation` | `Gestures`, `Navigation` |
+| `@justanarthur/just-map/presets` | `presets.googleEarth / flat / history / realtime` |
+| `@justanarthur/just-map/matching` | `snapToRoad`, `fromGpsFixes` |
 
-Peer dependencies: `maplibre-gl ^5`, `react ^19` (optional — only for `just-map/react`).
+Peer dependencies: `maplibre-gl ^5`, `react ^19` (optional — only for `@justanarthur/just-map/react`).
 
 ## Modules by domain
 
@@ -156,7 +189,7 @@ Modules declare `provides` (capability tags), `requires` (hard — engine throws
 
 Module order in the `modules` array is layer order: `Render` before `Tracks`, etc.
 
-## Presets (`just-map/presets`)
+## Presets (`@justanarthur/just-map/presets`)
 
 ```tsx
 <JustMap {...presets.googleEarth({ terrain: { exaggeration: 2 } })} />
@@ -167,10 +200,10 @@ Module order in the `modules` array is layer order: `Render` before `Tracks`, et
 - **history** — trip replay: fit-on-select tracks, playback + follow cam
 - **realtime** — live tracking: follow cam, no fitBounds, breadcrumbs visible
 
-## From GPS coordinates to road-snapped routes (`just-map/matching`)
+## From GPS coordinates to road-snapped routes (`@justanarthur/just-map/matching`)
 
 ```ts
-import { fromGpsFixes } from 'just-map/matching'
+import { fromGpsFixes } from '@justanarthur/just-map/matching'
 
 const track = await fromGpsFixes(fixes) // { coords, times, speeds, confidence, distanceKm }
 ```

@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { CameraOptions, Coord } from 'just-map'
-import { JustMap } from 'just-map/react'
-import { Render } from 'just-map/modules/render'
-import { Terrain } from 'just-map/modules/terrain'
-import { Tracks } from 'just-map/modules/data'
-import { FollowCam, Playback } from 'just-map/modules/animation'
-import { Gestures, Navigation } from 'just-map/modules/navigation'
+import type { CameraOptions, Coord } from '@justanarthur/just-map'
+import { JustMap } from '@justanarthur/just-map/react'
+import { Render } from '@justanarthur/just-map/modules/render'
+import { Terrain } from '@justanarthur/just-map/modules/terrain'
+import { Tracks } from '@justanarthur/just-map/modules/data'
+import { FollowCam, Playback } from '@justanarthur/just-map/modules/animation'
+import { Gestures, Navigation } from '@justanarthur/just-map/modules/navigation'
 import { trips } from './data/trips'
 
 const trip = trips.find(t => t.id === 'TR-2414')!

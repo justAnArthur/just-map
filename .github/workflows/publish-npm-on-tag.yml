@@ -1,0 +1,146 @@
+# publish-npm-on-tag.yml
+# ---
+# publishes a package to npm and creates a github release when a
+# version tag is pushed (e.g. "my-package@1.2.3").
+#
+# automatically skips packages that don't have "npm" in their tag
+# annotation's deploy targets. for legacy tags without annotations,
+# falls back to the check-publishable action.
+#
+# copy this file into your repo's `.github/workflows/` and adjust
+# the `push.tags` pattern to match your package naming convention.
+#
+# can also be called as a reusable workflow:
+#
+#   jobs:
+#     publish:
+#       uses: justAnArthur/just-github-actions-n-workflows/.github/workflows/publish-npm-on-tag.yml@main
+#       with:
+#         tag: ${{ github.ref_name }}
+#       secrets:
+#         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+#
+# required secrets:
+#   NPM_TOKEN — npm registry publish token
+# ---
+
+name: publish-npm-on-tag
+run-name: "publish-npm — ${{ inputs.tag || github.ref_name }}"
+
+on:
+  push:
+    tags: [ "**@*" ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'tag to publish (e.g. "@scope/pkg@1.2.3")'
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        description: 'tag to publish (e.g. "@scope/pkg@1.2.3")'
+        type: string
+        required: true
+    secrets:
+      NPM_TOKEN:
+        description: "npm registry publish token"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-meta:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      pkg_name: ${{ steps.meta.outputs.pkg_name }}
+      version: ${{ steps.meta.outputs.version }}
+      npm_tag: ${{ steps.meta.outputs.npm_tag }}
+      is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
+      has_annotation: ${{ steps.meta.outputs.has_annotation }}
+      publish_npm: ${{ steps.meta.outputs.publish_npm }}
+    steps:
+      - name: Resolve tag metadata
+        id: meta
+        uses: justAnArthur/just-github-actions-n-workflows/actions/resolve-tag-meta@main
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
+
+  publish-npm:
+    needs: resolve-meta
+    if: >-
+      needs.resolve-meta.outputs.has_annotation != 'true' ||
+      needs.resolve-meta.outputs.publish_npm == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-meta.outputs.tag }}
+          fetch-depth: 0
+          lfs: true
+
+      - name: Resolve package directory
+        id: pkg
+        uses: justAnArthur/just-github-actions-n-workflows/actions/resolve-package-dir@main
+        with:
+          tag_name: ${{ needs.resolve-meta.outputs.tag }}
+
+      - name: Check if package is publishable (legacy fallback)
+        if: needs.resolve-meta.outputs.has_annotation != 'true'
+        id: gate
+        uses: justAnArthur/just-github-actions-n-workflows/actions/check-publishable@main
+        with:
+          dir: ${{ steps.pkg.outputs.dir }}
+
+      - name: Install dependencies
+        if: steps.gate.outputs.skip != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Build (if build script exists)
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: bun run --silent build 2>/dev/null || echo "no build script, skipping"
+
+      - name: Publish to npm
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: bun publish -p --access public --tag ${{ needs.resolve-meta.outputs.npm_tag }}
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Fetch all tags
+        if: steps.gate.outputs.skip != 'true'
+        uses: justAnArthur/just-github-actions-n-workflows/actions/fetch-tags@main
+
+      - name: Generate release notes
+        if: steps.gate.outputs.skip != 'true'
+        id: release_notes
+        uses: justAnArthur/just-github-actions-n-workflows/actions/generate-release-notes@main
+        with:
+          tag_name: ${{ needs.resolve-meta.outputs.tag }}
+          root_dir: ${{ github.workspace }}
+
+      - name: Create GitHub release
+        if: steps.gate.outputs.skip != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve-meta.outputs.tag }}
+          name: ${{ needs.resolve-meta.outputs.tag }}
+          prerelease: ${{ needs.resolve-meta.outputs.is_prerelease == 'true' }}
+          body: |
+            ## Release Notes
+
+            ${{ steps.release_notes.outputs.release_notes }}
+
+            ## Install
+
+            ```sh
+            npm install ${{ needs.resolve-meta.outputs.pkg_name }}@${{ needs.resolve-meta.outputs.version }}
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

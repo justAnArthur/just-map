@@ -8,7 +8,7 @@
     "examples/basic": {
       "name": "just-map-example-basic",
       "dependencies": {
-        "just-map": "workspace:*",
+        "@justanarthur/just-map": "workspace:*",
         "maplibre-gl": "^5.0.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
@@ -24,7 +24,7 @@
     "examples/fleet": {
       "name": "just-map-example-fleet",
       "dependencies": {
-        "just-map": "workspace:*",
+        "@justanarthur/just-map": "workspace:*",
         "maplibre-gl": "^5.0.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
@@ -40,7 +40,7 @@
     "examples/gps-matching": {
       "name": "just-map-example-gps-matching",
       "dependencies": {
-        "just-map": "workspace:*",
+        "@justanarthur/just-map": "workspace:*",
         "maplibre-gl": "^5.0.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
@@ -56,7 +56,7 @@
     "examples/outdoor": {
       "name": "just-map-example-outdoor",
       "dependencies": {
-        "just-map": "workspace:*",
+        "@justanarthur/just-map": "workspace:*",
         "maplibre-gl": "^5.0.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
@@ -72,7 +72,7 @@
     "examples/playground": {
       "name": "just-map-example-playground",
       "dependencies": {
-        "just-map": "workspace:*",
+        "@justanarthur/just-map": "workspace:*",
         "maplibre-gl": "^5.0.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
@@ -86,8 +86,8 @@
       },
     },
     "packages/just-map": {
-      "name": "just-map",
-      "version": "0.1.0",
+      "name": "@justanarthur/just-map",
+      "version": "0.2.0",
       "devDependencies": {
         "@types/react": "^19.0.0",
         "bun-types": "^1.4.2",
@@ -205,6 +205,8 @@
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.6.0", "", {}, "sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw=="],
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
+
+    "@justanarthur/just-map": ["@justanarthur/just-map@workspace:packages/just-map"],
 
     "@mapbox/jsonlint-lines-primitives": ["@mapbox/jsonlint-lines-primitives@2.0.3", "", {}, "sha512-0SElaV0uMxEnxzBhhX9WTuPyUeMsAN/SS0i16tjuba4/mio63MG9khjC1a0JAiPGXAwvwm4UfHJURCN7nyudQg=="],
 
@@ -357,8 +359,6 @@
     "json-stringify-pretty-compact": ["json-stringify-pretty-compact@4.0.0", "", {}, "sha512-3CNZ2DnrpByG9Nqj6Xo8vqbjT4F6N+tb4Gb28ESAZjYZ5yqvmc56J+/kuIwkaAMOyblTQhUW7PxMkUb8Q36N3Q=="],
 
     "json5": ["json5@2.2.3", "", { "bin": { "json5": "lib/cli.js" } }, "sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg=="],
-
-    "just-map": ["just-map@workspace:packages/just-map"],
 
     "just-map-example-basic": ["just-map-example-basic@workspace:examples/basic"],
 
