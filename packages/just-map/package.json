@@ -1,6 +1,6 @@
 {
   "name": "@justanarthur/just-map",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Modular 3D map library on MapLibre GL — Swiper-style domain modules, React-first, with road-snapping GPS matching.",
   "license": "MIT",
   "repository": {
