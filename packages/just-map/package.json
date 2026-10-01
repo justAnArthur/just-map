@@ -22,40 +22,40 @@
       "import": "./dist/index.js"
     },
     "./core": {
-      "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.js"
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js"
     },
     "./react": {
-      "types": "./dist/react/index.d.ts",
-      "import": "./dist/react/index.js"
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
     },
     "./modules/render": {
-      "types": "./dist/modules/render/index.d.ts",
-      "import": "./dist/modules/render/index.js"
+      "types": "./dist/modules/render.d.ts",
+      "import": "./dist/modules/render.js"
     },
     "./modules/terrain": {
-      "types": "./dist/modules/terrain/index.d.ts",
-      "import": "./dist/modules/terrain/index.js"
+      "types": "./dist/modules/terrain.d.ts",
+      "import": "./dist/modules/terrain.js"
     },
     "./modules/data": {
-      "types": "./dist/modules/data/index.d.ts",
-      "import": "./dist/modules/data/index.js"
+      "types": "./dist/modules/data.d.ts",
+      "import": "./dist/modules/data.js"
     },
     "./modules/animation": {
-      "types": "./dist/modules/animation/index.d.ts",
-      "import": "./dist/modules/animation/index.js"
+      "types": "./dist/modules/animation.d.ts",
+      "import": "./dist/modules/animation.js"
     },
     "./modules/navigation": {
-      "types": "./dist/modules/navigation/index.d.ts",
-      "import": "./dist/modules/navigation/index.js"
+      "types": "./dist/modules/navigation.d.ts",
+      "import": "./dist/modules/navigation.js"
     },
     "./presets": {
-      "types": "./dist/presets/index.d.ts",
-      "import": "./dist/presets/index.js"
+      "types": "./dist/presets.d.ts",
+      "import": "./dist/presets.js"
     },
     "./matching": {
-      "types": "./dist/matching/index.d.ts",
-      "import": "./dist/matching/index.js"
+      "types": "./dist/matching.d.ts",
+      "import": "./dist/matching.js"
     }
   },
   "scripts": {
