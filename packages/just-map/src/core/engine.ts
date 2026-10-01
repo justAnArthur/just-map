@@ -163,7 +163,20 @@ export class JustMapEngine {
     this.#observer = new ResizeObserver(() => this.map.resize())
     this.#observer.observe(el)
 
-    await new Promise<void>(resolve => this.map.once('load', resolve))
+    await new Promise<void>(resolve => {
+      this.map.once('load', resolve)
+
+      // frozen-rAF webviews (occluded panes) defer the load event AND the
+      // isStyleLoaded flag indefinitely — but the applied style is queryable
+      // without frames: layers present means the style object is live and
+      // modules can draw into it
+      const poll = window.setInterval(() => {
+        if (this.#destroyed || this.map.isStyleLoaded() || this.map.getStyle().layers.length > 0) {
+          window.clearInterval(poll)
+          resolve()
+        }
+      }, 250)
+    })
     if (this.#destroyed) return
     this.map.resize()
 

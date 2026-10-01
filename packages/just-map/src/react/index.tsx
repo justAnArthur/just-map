@@ -31,13 +31,19 @@ export function useJustMap(options: UseJustMapOptions) {
       sky: cbs.current.sky,
     })
     engineRef.current = engine
+    // debug affordance: the live engine, also before ready
+    ;(globalThis as any).__justMap = engine
 
     const offError = engine.on('error', e => cbs.current.onError?.(e))
-    engine.ready.then(() => {
-      if (cancelled) return
-      setReady(true)
-      cbs.current.onReady?.(engine)
-    })
+    engine.ready
+      .then(() => {
+        if (cancelled) return
+        setReady(true)
+        cbs.current.onReady?.(engine)
+      })
+      .catch(e => {
+        if (!cancelled) cbs.current.onError?.(e)
+      })
 
     return () => {
       cancelled = true

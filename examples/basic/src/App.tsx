@@ -45,6 +45,7 @@ export default function App() {
 
   useEffect(() => {
     if (!engine) return
+    ;(window as any).__map = engine
     engine.module<{ easeTo(v: { pitch: number; duration: number }): void }>('Navigation')?.easeTo({
       pitch: is3d ? 58 : 0,
       duration: 1200,
