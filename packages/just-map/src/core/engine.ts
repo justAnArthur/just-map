@@ -161,10 +161,11 @@ export class JustMapEngine {
     // a Style module provides the base style — it's a foundation, resolved before the map exists
     const styleModule = options.modules.find(m => m.def.name === 'Style')
     const base = styleModule?.options.base
+    const style = resolveStyle(base, camera, sky)
 
-    this.map = new maplibregl.Map({
+    this.map = new maplibre-gl.Map({
       container: el,
-      style: resolveStyle(base, camera, sky),
+      style,
       center: camera.center ?? [0, 0],
       zoom: camera.zoom ?? 2,
       pitch: camera.pitch ?? 0,
@@ -183,20 +184,23 @@ export class JustMapEngine {
     this.#observer = new ResizeObserver(() => this.map.resize())
     this.#observer.observe(el)
 
-    await new Promise<void>(resolve => {
-      this.map.once('load', resolve)
+    if (typeof style !== 'object') {
+      // URL styles reach the browser asynchronously; the load event may still
+      // wait on frames in frozen-rAF webviews, so also poll the style object —
+      // layers present means it is live and modules can draw into it
+      await new Promise<void>(resolve => {
+        this.map.once('load', resolve)
 
-      // frozen-rAF webviews (occluded panes) defer the load event AND the
-      // isStyleLoaded flag indefinitely — but the applied style is queryable
-      // without frames: layers present means the style object is live and
-      // modules can draw into it
-      const poll = window.setInterval(() => {
-        if (this.#destroyed || this.map.isStyleLoaded() || this.map.getStyle().layers.length > 0) {
-          window.clearInterval(poll)
-          resolve()
-        }
-      }, 250)
-    })
+        const poll = window.setInterval(() => {
+          if (this.#destroyed || this.map.isStyleLoaded() || (this.map.getStyle()?.layers?.length ?? 0) > 0) {
+            window.clearInterval(poll)
+            resolve()
+          }
+        }, 250)
+      })
+    }
+    // inline style specs are live at construction — module addSource/addLayer
+    // calls queue on the style and apply when frames run
     if (this.#destroyed) return
     this.map.resize()
 
