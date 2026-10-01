@@ -74,7 +74,7 @@ export const Markers = module<MarkersOptions>({
           if (p.popup) marker.setPopup(popup(p.popup))
           return marker
         })
-        if (!fit || state.markers.length === 0) return
+        if (!fit || !state.markers.length) return
         if (state.markers.length === 1) {
           map.jumpTo({ center: points[0].coord, zoom: fit.maxZoom })
         } else {
