@@ -1,8 +1,5 @@
 import { module } from '../../core/module'
 
-/**
- * 3D terrain options.
- */
 export type TerrainOptions = {
   /** terrarium-encoded raster-dem tile URL template */
   demUrl: string

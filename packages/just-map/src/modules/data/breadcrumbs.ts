@@ -4,7 +4,6 @@ import { module } from '../../core/module'
 import type { JustMapEngine } from '../../core/engine'
 import type { Fix } from '../../utils/types'
 
-/** options for `Breadcrumbs` */
 export type BreadcrumbsOptions = {
   fixes: Fix[]
   color: string
@@ -19,7 +18,6 @@ export type BreadcrumbsHandle = {
 
 type BreadcrumbsState = BreadcrumbsHandle & { options: BreadcrumbsOptions }
 
-// one FeatureCollection: the straight-line chord through all fixes, plus a dot per fix
 const crumbs = (fixes: Fix[]) => ({
   type: 'FeatureCollection' as const,
   features: [

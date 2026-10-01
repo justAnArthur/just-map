@@ -26,12 +26,10 @@ export type PresetOverrides = {
   navigation?: Partial<NavigationOptions>
 }
 
-type Slot = [keyof PresetOverrides, ModuleFactory<any>, PresetOverrides[keyof PresetOverrides]] | null
+type Slot = [keyof PresetOverrides, ModuleFactory<any>, PresetOverrides[keyof PresetOverrides]]
 
 function bundle(slots: Slot[], camera: CameraOptions, sky: PresetBundle['sky'], overrides: PresetOverrides = {}): PresetBundle {
-  const modules = slots
-    .filter((s): s is Exclude<Slot, null> => !!s)
-    .map(([key, factory, preset]) => factory({ ...preset, ...overrides[key] }))
+  const modules = slots.map(([key, factory, preset]) => factory({ ...preset, ...overrides[key] }))
 
   return { modules, camera, sky }
 }

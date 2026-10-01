@@ -1,7 +1,7 @@
 import type { SourceSpecification, StyleSpecification } from 'maplibre-gl'
 import { module } from '../../core/module'
 import type { JustMapEngine } from '../../core/engine'
-import { STYLE_PRESETS } from '../../core/style'
+import { styleUrl, type StyleBase } from '../../core/style'
 
 /** recolor / restyle / hide base layers by id — the SnazzyMaps-style knob */
 export type StyleTweak = {
@@ -13,7 +13,7 @@ export type StyleTweak = {
 
 export type StyleOptions = {
   /** preset name, style URL, or a full style spec */
-  base: keyof typeof STYLE_PRESETS | (string & {}) | StyleSpecification
+  base: StyleBase
   tweaks: StyleTweak[]
   /** labels/main-roads/borders over raster imagery, everything else hidden — the Google hybrid look */
   hybrid: boolean
@@ -92,8 +92,7 @@ export const Style = module<StyleOptions>({
       },
 
       swap(next: StyleOptions) {
-        const target =
-          typeof next.base === 'string' ? (STYLE_PRESETS as Record<string, string>)[next.base] ?? next.base : next.base
+        const target = typeof next.base === 'string' ? styleUrl(next.base) : next.base
         const prev = map.getStyle()
         const keepLayers = prev.layers.filter(l => !baseIds.has(l.id))
 
@@ -105,7 +104,6 @@ export const Style = module<StyleOptions>({
 
         map.setStyle(target as string, {
           diff: false,
-          // sibling modules' layers, sources and live terrain/projection/sky survive the base swap
           transformStyle: (_prev, nextSpec) => {
             const merged: StyleSpecification = {
               ...nextSpec,

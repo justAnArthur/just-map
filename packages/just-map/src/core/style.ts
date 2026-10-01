@@ -36,6 +36,9 @@ export const STYLE_PRESETS = {
 
 export type StyleBase = keyof typeof STYLE_PRESETS | (string & {}) | StyleSpecification
 
+/** preset name or URL → the style URL maplibre fetches */
+export const styleUrl = (base: string) => (STYLE_PRESETS as Record<string, string>)[base] ?? base
+
 export function buildStyle(camera: CameraOptions, sky: SkyPreset | SkySpecification | false): StyleSpecification {
   const style: StyleSpecification = {
     version: 8,
@@ -58,7 +61,7 @@ export function resolveStyle(
   camera: CameraOptions,
   sky: SkyPreset | SkySpecification | false,
 ): string | StyleSpecification {
-  if (typeof base === 'string') return (STYLE_PRESETS as Record<string, string>)[base] ?? base
+  if (typeof base === 'string') return styleUrl(base)
 
   if (base) {
     const merged: StyleSpecification = {

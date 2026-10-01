@@ -1,8 +1,5 @@
 import { module } from '../../core/module'
 
-/**
- * 3D buildings options.
- */
 export type BuildingsOptions = {
   /** vector tile source URL whose tiles contain a `building` source-layer */
   url: string
