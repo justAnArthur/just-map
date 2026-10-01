@@ -46,8 +46,9 @@ export const Style = module<StyleOptions>({
 
   create(engine: JustMapEngine, options: StyleOptions) {
     const map = engine.map
-    // base layers = everything present before this module's siblings add theirs
+    // base layers/sources = everything present before this module's siblings add theirs
     let baseIds = new Set(map.getStyle().layers.map(l => l.id))
+    let baseSources = new Set(Object.keys(map.getStyle().sources))
 
     const handle: Handle = {
       opts: options,
@@ -96,25 +97,34 @@ export const Style = module<StyleOptions>({
         const prev = map.getStyle()
         const keepLayers = prev.layers.filter(l => !baseIds.has(l.id))
 
+        // keep every module-owned source — including ones no layer references
+        // (a terrain DEM is referenced only by setTerrain, not by any layer)
         const keepSources: Record<string, SourceSpecification> = {}
-        for (const l of keepLayers) {
-          const s = (l as { source?: string }).source
-          if (s && prev.sources[s]) keepSources[s] = prev.sources[s]
-        }
+        for (const [id, s] of Object.entries(prev.sources))
+          if (!baseSources.has(id)) keepSources[id] = s
 
         map.setStyle(target as string, {
           diff: false,
-          // sibling modules' layers and sources survive the base swap
-          transformStyle: (_prev, nextSpec) => ({
-            ...nextSpec,
-            sources: { ...nextSpec.sources, ...keepSources },
-            layers: [...nextSpec.layers, ...keepLayers],
-          }),
+          // sibling modules' layers, sources and live terrain/projection/sky survive the base swap
+          transformStyle: (_prev, nextSpec) => {
+            const merged: StyleSpecification = {
+              ...nextSpec,
+              sources: { ...nextSpec.sources, ...keepSources },
+              layers: [...nextSpec.layers, ...keepLayers],
+            }
+            if (prev.terrain) merged.terrain = prev.terrain
+            if (prev.projection) merged.projection = prev.projection
+            if (!merged.sky && prev.sky) merged.sky = prev.sky
+            return merged
+          },
         })
 
         map.once('styledata', () => {
-          const keepIds = new Set(keepLayers.map(l => l.id))
-          baseIds = new Set(map.getStyle().layers.filter(l => !keepIds.has(l.id)).map(l => l.id))
+          const keepLayerIds = new Set(keepLayers.map(l => l.id))
+          const keepSourceIds = new Set(Object.keys(keepSources))
+          const style = map.getStyle()
+          baseIds = new Set(style.layers.filter(l => !keepLayerIds.has(l.id)).map(l => l.id))
+          baseSources = new Set(Object.keys(style.sources).filter(id => !keepSourceIds.has(id)))
           handle.apply()
         })
       },

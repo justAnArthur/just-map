@@ -64,7 +64,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <JustMap modules={modules} camera={CAMERA} sky={false} onReady={setEngine} onRemove={() => setEngine(null)} />
+      <JustMap modules={modules} camera={CAMERA} onReady={setEngine} onRemove={() => setEngine(null)} />
 
       <div className="card">
         <h1>just-map · styles</h1>
