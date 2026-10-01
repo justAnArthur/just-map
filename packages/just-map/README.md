@@ -80,6 +80,7 @@ For a full runnable app, see the `examples/` folder in the repo — `basic` is t
 | `@justanarthur/just-map/modules/animation` | `Playback`, `FollowCam` |
 | `@justanarthur/just-map/modules/navigation` | `Gestures`, `Navigation` |
 | `@justanarthur/just-map/presets` | `presets.googleEarth / flat / history / realtime` |
+| `@justanarthur/just-map/theme.css` | theme tokens + `.jm-*` overlay classes |
 | `@justanarthur/just-map/matching` | `snapToRoad`, `fromGpsFixes` |
 
 Peer dependencies: `maplibre-gl ^5`, `react ^19` (optional — only for `@justanarthur/just-map/react`).
@@ -185,6 +186,30 @@ with one dev warning. Also `pan`, `zoomSpeed`, `keyboard`.
 **`Navigation`** — compass/zoom controls (`visualizePitch` on) + `flyTo`/`easeTo` helpers.
 
 Roadmap: `MiniMap`, `ScaleBar`, `Geolocation`.
+
+## Theming — one button style
+
+Import the stylesheet once, pass tokens, and every control follows — MapLibre's zoom/compass
+buttons are restyled to match, and app-rendered overlays use the shared `.jm-*` classes.
+
+```tsx
+import '@justanarthur/just-map/theme.css'
+
+<JustMap theme={{ accent: '#0ea5e9', radius: 10 }} modules={[...]} />
+```
+
+| Token | CSS variable | Default |
+|---|---|---|
+| `accent` / `accentFg` | `--jm-accent` / `--jm-accent-fg` | `#2563eb` / white |
+| `bg` / `fg` / `border` | `--jm-bg` / `--jm-fg` / `--jm-border` | white / `#0f172a` / `#cbd5e1` |
+| `radius` | `--jm-radius` | `8px` |
+| `barBg` / `shadow` | `--jm-bar-bg` / `--jm-bar-shadow` | translucent white / soft |
+
+Overlay classes for app controls (playback bars, editor toolbars):
+`.jm-bar` (floating control bar), `.jm-btn` (icon button; `.active` = accent),
+`.jm-range` (accent slider), `.jm-pill` (badge). `Navigation({ className })` adds
+classes to the control container as a fully-custom escape hatch — `engine.setTheme()`
+restyles at runtime.
 
 ## Dependencies between modules
 

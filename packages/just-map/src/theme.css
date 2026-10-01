@@ -1,0 +1,109 @@
+/* just-map theme tokens — import once: `import '@justanarthur/just-map/theme.css'`.
+   Apps pass <JustMap theme={{...}}> (engine sets these vars inline) or set them
+   themselves; defaults also cover .jm-* elements used outside the container. */
+.just-map,
+.jm-bar,
+.jm-btn,
+.jm-pill {
+  --jm-accent: #2563eb;
+  --jm-accent-fg: #ffffff;
+  --jm-bg: #ffffff;
+  --jm-fg: #0f172a;
+  --jm-border: #cbd5e1;
+  --jm-radius: 8px;
+  --jm-bar-bg: rgba(255, 255, 255, 0.95);
+  --jm-bar-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+/* MapLibre's own controls (Navigation zoom/compass, …) adopt the same chrome */
+.just-map .maplibregl-ctrl-group {
+  background: var(--jm-bg);
+  border: 1px solid var(--jm-border);
+  border-radius: var(--jm-radius);
+  box-shadow: var(--jm-bar-shadow);
+  overflow: hidden;
+}
+
+.just-map .maplibregl-ctrl-group button {
+  width: 32px;
+  height: 32px;
+  background: var(--jm-bg);
+  color: var(--jm-fg);
+}
+
+.just-map .maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--jm-border);
+}
+
+.just-map .maplibregl-ctrl-group button:hover {
+  background: color-mix(in srgb, var(--jm-accent) 10%, var(--jm-bg));
+}
+
+.just-map .maplibregl-ctrl-group button:focus-visible {
+  outline: 2px solid var(--jm-accent);
+  outline-offset: -2px;
+}
+
+/* overlay controls rendered by the app: one bar, one button look */
+.jm-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--jm-bar-bg);
+  border: 1px solid var(--jm-border);
+  border-radius: var(--jm-radius);
+  box-shadow: var(--jm-bar-shadow);
+}
+
+.jm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: calc(var(--jm-radius) - 2px);
+  background: transparent;
+  color: var(--jm-fg);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.jm-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--jm-accent) 10%, var(--jm-bg));
+}
+
+.jm-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.jm-btn.active {
+  background: color-mix(in srgb, var(--jm-accent) 12%, var(--jm-bg));
+  color: var(--jm-accent);
+}
+
+.jm-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.jm-range {
+  accent-color: var(--jm-accent);
+}
+
+.jm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--jm-bar-bg);
+  border: 1px solid var(--jm-border);
+  border-radius: 999px;
+  box-shadow: var(--jm-bar-shadow);
+  color: var(--jm-fg);
+  font-size: 13px;
+}

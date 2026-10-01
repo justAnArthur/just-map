@@ -2,11 +2,13 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { JustMapEngine } from '../core/engine'
 import type { ModuleSpec } from '../core/module'
 import type { CameraOptions, SkyPreset, SkySpecification } from '../core/style'
+import type { JustMapTheme } from '../core/theme'
 
 export type UseJustMapOptions = {
   modules: ModuleSpec<any>[]
   camera?: CameraOptions
   sky?: SkyPreset | SkySpecification | false
+  theme?: JustMapTheme
   onReady?(engine: JustMapEngine): void
   onError?(error: unknown): void
   onRemove?(): void
@@ -21,6 +23,7 @@ export function useJustMap(options: UseJustMapOptions) {
   const cbs = useRef(options)
   cbs.current = options
   const appliedCamera = useRef<CameraOptions | undefined>(options.camera)
+  const appliedTheme = useRef<JustMapTheme | undefined>(options.theme)
   const mountedKey = useRef('')
 
   useEffect(() => {
@@ -29,6 +32,7 @@ export function useJustMap(options: UseJustMapOptions) {
       modules: options.modules,
       camera: cbs.current.camera,
       sky: cbs.current.sky,
+      theme: cbs.current.theme,
     })
     engineRef.current = engine
     // debug affordance: the live engine, also before ready
@@ -71,6 +75,10 @@ export function useJustMap(options: UseJustMapOptions) {
 
     for (const spec of options.modules) engine.updateModule(spec)
 
+    if (options.theme && options.theme !== appliedTheme.current) {
+      appliedTheme.current = options.theme
+      engine.setTheme(options.theme)
+    }
     const camera = options.camera
     const prev = appliedCamera.current
     if (camera && prev) {

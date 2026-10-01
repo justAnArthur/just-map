@@ -22,7 +22,7 @@ const Btn = ({
   onClick: () => void
   children: React.ReactNode
 }) => (
-  <button className={on ? 'btn on' : 'btn'} disabled={disabled} onClick={onClick}>
+  <button className={on ? 'jm-btn active' : 'jm-btn'} disabled={disabled} onClick={onClick}>
     {children}
   </button>
 )

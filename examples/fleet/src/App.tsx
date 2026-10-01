@@ -156,11 +156,12 @@ export default function App() {
                   {selectedTrip.plate} · {selectedTrip.startedLabel} · {selectedTrip.distanceKm} km
                 </span>
               </div>
-              <div className="controls">
-                <button className="play" onClick={() => setPlaying(p => !p)}>
+              <div className="jm-bar">
+                <button className="jm-btn" onClick={() => setPlaying(p => !p)}>
                   {playing ? 'Pause' : 'Play'}
                 </button>
                 <input
+                  className="jm-range"
                   type="range"
                   min={0}
                   max={1}

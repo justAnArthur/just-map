@@ -2,11 +2,13 @@ import maplibregl from 'maplibre-gl'
 import { Emitter } from './events'
 import type { ModuleSpec } from './module'
 import { resolveStyle, type CameraOptions, type SkyPreset, type SkySpecification } from './style'
+import { themeVars, type JustMapTheme } from './theme'
 
 export type EngineOptions = {
   modules: ModuleSpec<any>[]
   camera?: CameraOptions
   sky?: SkyPreset | SkySpecification | false
+  theme?: JustMapTheme
 }
 
 type EngineEvents = {
@@ -68,6 +70,21 @@ export class JustMapEngine {
       for (const cap of spec.def.provides ?? []) this.#capabilities.add(cap)
 
     this.ready = this.#init(container, options)
+
+    if (options.theme) {
+      const el = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container
+      if (el) this.#applyTheme(el, options.theme)
+    }
+  }
+
+  /** restyle every control inside the map (CSS variables on the container) */
+  setTheme(theme: JustMapTheme) {
+    this.#applyTheme(this.map?.getContainer(), theme)
+  }
+
+  #applyTheme(el: HTMLElement | undefined, theme: JustMapTheme) {
+    if (!el) return
+    for (const [prop, value] of Object.entries(themeVars(theme))) el.style.setProperty(prop, value)
   }
 
   /** capability check, e.g. `engine.has('3d')` */
@@ -132,6 +149,9 @@ export class JustMapEngine {
   async #init(container: string | HTMLElement, options: EngineOptions) {
     const el = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container
     if (!el) throw new Error(`just-map: container "${container}" not found`)
+
+    // theme.css scopes tokens and control restyling to .just-map
+    el.classList.add('just-map')
 
     await layoutReady(el)
     if (this.#destroyed) return

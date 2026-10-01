@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { JustMap } from '@justanarthur/just-map/react'
+import { themeVars, type JustMapTheme } from '@justanarthur/just-map/core'
 import { flat } from '@justanarthur/just-map/presets'
 import { Markers, ZoneEditor } from '@justanarthur/just-map/modules/data'
 import type { Coord } from '@justanarthur/just-map'
@@ -8,16 +9,18 @@ const OFFICE: Coord = [17.1077, 48.1486]
 const DEPOT: Coord = [17.146, 48.175]
 const PARKING: Coord = [17.071, 48.121]
 
+// one accent drives the theme AND the zone color — everything follows
+const ACCENTS = ['#2563eb', '#dc2626', '#16a34a']
+
 // reference-stable option blobs (module options are diffed by reference)
 const POINTS = [
-  { coord: OFFICE, color: '#2563eb', label: 'Office', popup: 'HQ — Obchodná 1' },
-  { coord: DEPOT, color: '#f97316', label: 'Depot', popup: 'Service depot' },
-  { coord: PARKING, color: '#16a34a', label: 'Parking', popup: 'Long-term parking' },
+  { coord: OFFICE, label: 'Office', popup: 'HQ — Obchodná 1' },
+  { coord: DEPOT, color: ACCENTS[1], label: 'Depot', popup: 'Service depot' },
+  { coord: PARKING, color: ACCENTS[2], label: 'Parking', popup: 'Long-term parking' },
 ]
 const MARKERS = Markers({ points: POINTS, fit: { padding: 60, maxZoom: 14 } })
 const BASE = flat().modules
 const CAMERA = { ...flat().camera, center: OFFICE, zoom: 12.6 }
-const COLORS = ['#2563eb', '#dc2626', '#16a34a']
 
 const INITIAL_RING: Coord[] = [
   [17.098, 48.156],
@@ -35,7 +38,11 @@ export default function App() {
     future: [],
   })
   const [readonly, setReadonly] = useState(false)
-  const [color, setColor] = useState(COLORS[0])
+  const [accent, setAccent] = useState(ACCENTS[0])
+
+  const theme = useMemo<JustMapTheme>(() => ({ accent }), [accent])
+  // the engine themes the map container; hoisting the same vars themes the sidebar bars too
+  const pageVars = themeVars(theme) as CSSProperties
 
   // one history entry per editor commit (drag end / insert / delete)
   const commit = useCallback((next: Coord[]) => {
@@ -73,12 +80,12 @@ export default function App() {
   }, [undo, redo])
 
   const modules = useMemo(
-    () => [...BASE, MARKERS, { def: ZoneEditor.def, options: { ring, readonly, color, onChange: commit } }],
-    [ring, readonly, color, commit],
+    () => [...BASE, MARKERS, { def: ZoneEditor.def, options: { ring, readonly, color: accent, onChange: commit } }],
+    [ring, readonly, accent, commit],
   )
 
   return (
-    <div className="app">
+    <div className="app" style={pageVars}>
       <div className="sidebar">
         <h1>Geofence zone</h1>
         <p>
@@ -86,36 +93,41 @@ export default function App() {
           vertex to delete it. ⌘/Ctrl+Z / Y for undo &amp; redo.
         </p>
 
-        <div className="toolbar">
-          <button onClick={undo} disabled={!past.length}>
-            ↶ Undo
+        <div className="jm-bar">
+          <button className="jm-btn" onClick={undo} disabled={!past.length} aria-label="Undo">
+            ↶
           </button>
-          <button onClick={redo} disabled={!future.length}>
-            ↷ Redo
+          <button className="jm-btn" onClick={redo} disabled={!future.length} aria-label="Redo">
+            ↷
           </button>
-          <button onClick={removeLast} disabled={!ring.length || readonly}>
+          <button className="jm-btn" onClick={removeLast} disabled={!ring.length || readonly}>
             Remove last
           </button>
-          <button onClick={clear} disabled={!ring.length || readonly}>
+          <button className="jm-btn" onClick={clear} disabled={!ring.length || readonly}>
             Clear
           </button>
         </div>
 
-        <div className="toolbar">
-          <button className={readonly ? 'active' : ''} onClick={() => setReadonly(v => !v)}>
-            {readonly ? 'Readonly ✓' : 'Readonly'}
+        <div className="jm-bar">
+          <button
+            className={readonly ? 'jm-btn active' : 'jm-btn'}
+            onClick={() => setReadonly(v => !v)}
+          >
+            Readonly
           </button>
         </div>
 
-        <div className="swatches">
-          {COLORS.map(c => (
+        <div className="jm-bar">
+          {ACCENTS.map(c => (
             <button
               key={c}
-              className={color === c ? 'active' : ''}
-              style={{ background: c }}
-              onClick={() => setColor(c)}
-              aria-label={`color ${c}`}
-            />
+              className={accent === c ? 'jm-btn active' : 'jm-btn'}
+              style={{ color: c }}
+              onClick={() => setAccent(c)}
+              aria-label={`accent ${c}`}
+            >
+              ●
+            </button>
           ))}
         </div>
 
@@ -125,8 +137,8 @@ export default function App() {
       </div>
 
       <div className="map-wrap">
-        <JustMap className="map-container" modules={modules} camera={CAMERA} />
-        <div className="map-hint">dots open popups — try them</div>
+        <JustMap className="map-container" modules={modules} camera={CAMERA} theme={theme} />
+        <div className="map-hint jm-pill">dots open popups — try them</div>
       </div>
     </div>
   )

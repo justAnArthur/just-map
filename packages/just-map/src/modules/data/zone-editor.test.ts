@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { nearestSegment, ZoneEditor } from './zone-editor'
+import type { Coord } from '../../utils/types'
 
 test('ZoneEditor defaults', () => {
   expect(ZoneEditor().options).toEqual({ ring: [], readonly: false, color: '#2563eb' })
@@ -7,7 +8,7 @@ test('ZoneEditor defaults', () => {
 
 describe('nearestSegment', () => {
   // a rough square around Bratislava
-  const square = [
+  const square: Coord[] = [
     [17.0, 48.1],
     [17.2, 48.1],
     [17.2, 48.2],
@@ -26,6 +27,6 @@ describe('nearestSegment', () => {
   })
 
   test('single-vertex ring loops onto itself', () => {
-    expect(nearestSegment([[17.1, 48.1]], [17.2, 48.2])).toBe(0)
+    expect(nearestSegment([[17.1, 48.1]] as Coord[], [17.2, 48.2])).toBe(0)
   })
 })

@@ -34,27 +34,7 @@ body,
   margin-bottom: 8px;
 }
 
-.btn {
-  padding: 3px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  background: transparent;
-  color: #e8edf4;
-  font: inherit;
-  cursor: pointer;
-  text-transform: capitalize;
-}
 
-.btn.on {
-  background: #38bdf8;
-  border-color: #38bdf8;
-  color: #0b1220;
-}
-
-.btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
 
 .card label {
   display: flex;

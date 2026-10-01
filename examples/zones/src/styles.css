@@ -38,49 +38,6 @@ body,
   font-size: 13px;
 }
 
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.toolbar button {
-  font: inherit;
-  padding: 6px 10px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.toolbar button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.toolbar button.active {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
-}
-
-.swatches {
-  display: flex;
-  gap: 8px;
-}
-
-.swatches button {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-}
-
-.swatches button.active {
-  border-color: #0f172a;
-}
-
 .map-wrap {
   position: relative;
   flex: 1;

@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /^@justanarthur\/just-map\/modules\/(\w+)$/, replacement: `${pkg}/modules/$1/index.ts` },
+      { find: /^@justanarthur\/just-map\/theme\.css$/, replacement: fileURLToPath(new URL('../../packages/just-map/src/theme.css', import.meta.url)) },
       { find: /^@justanarthur\/just-map\/react$/, replacement: `${pkg}/react/index.tsx` },
       { find: /^@justanarthur\/just-map\/core$/, replacement: `${pkg}/core/index.ts` },
       { find: /^@justanarthur\/just-map\/presets$/, replacement: `${pkg}/presets/index.ts` },
