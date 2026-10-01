@@ -41,7 +41,7 @@ engine.ready.then(() => engine.map.flyTo({ center: [20.05, 49.1], zoom: 12 }))
 |---|---|
 | `just-map/react` | `<JustMap>`, `useJustMap` |
 | `just-map/core` | `JustMapEngine` (vanilla engine + escape hatch: `engine.map`) |
-| `just-map/modules/render` | `Render` |
+| `just-map/modules/render` | `Render`, `Style` |
 | `just-map/modules/terrain` | `Terrain`, `Buildings` |
 | `just-map/modules/data` | `Tracks`, `Breadcrumbs` |
 | `just-map/modules/animation` | `Playback`, `FollowCam` |
@@ -65,8 +65,28 @@ far-field LOD cap (`setSourceTileLodParams`) so fast zoom-outs never show bare p
 | `maxzoom` | `19` | |
 | `lodTiers` | `true` | set `false` for a single source (vector styles, local tiles) |
 | `attribution` | per provider | |
+| `visible` | `true` | hide the imagery (map-type switching without remount) |
 
-Roadmap: `Labels` (hybrid place labels over imagery), `Style` (any MapLibre style JSON), `Graticule`.
+**`Style`** — vector base styles with live tweaks: the SnazzyMaps experience for MapLibre.
+
+```tsx
+Style({ base: 'positron', tweaks: [
+  { match: 'water', paint: { 'fill-color': '#aadaff' } },
+  { match: /label|name/, visibility: 'none' },
+] })
+```
+
+| Option | Default | Notes |
+|---|---|---|
+| `base` | `'positron'` | `'positron' \| 'liberty' \| 'bright'` (free OpenFreeMap vector styles), any style URL, or a full style spec |
+| `tweaks` | `[]` | `{ match: id/regex/fn, paint, layout, visibility }` applied to matching base layers |
+| `hybrid` | `false` | keep only labels/main-roads/borders and draw them **above raster imagery** — pair with `Render({ provider: 'satellite' })` (put Render first) for the Google satellite-with-labels look |
+| `hybridKeep` | `/label\|name\|^boundary_\|^highway_(major\|motorway)/` | which base layers survive hybrid mode |
+| `visible` | `true` | hide the entire base (pure-satellite mode) |
+
+Changing `base` at runtime swaps the style while preserving every other module's layers and sources. Map / Hybrid / Satellite / 3D switching is pure option changes — no remount (see the `basic` example). Works with `Terrain()`/`Buildings()` for 3D on any base.
+
+Roadmap: `Graticule`.
 
 ### terrain — the 3D world
 
@@ -79,6 +99,7 @@ Roadmap: `Labels` (hybrid place labels over imagery), `Style` (any MapLibre styl
 | `maxzoom` | `12` — the DEM exists to z12; higher maxzoom starves covering |
 | `exaggeration` | `1.8` |
 | `hillshade` / `hillshadeExaggeration` | `true` / `0.35` |
+| `enabled` | `true` | `false` detaches terrain (map-type switching without remount) |
 
 **`Buildings`** — OSM 3D extrusions (OpenFreeMap planet tiles), `minzoom 14`, `opacity 0.7`.
 Soft-depends on `3d`: renders flat extrusions without terrain.

@@ -1,7 +1,7 @@
 import maplibregl from 'maplibre-gl'
 import { Emitter } from './events'
 import type { ModuleSpec } from './module'
-import { buildStyle, type CameraOptions, type SkyPreset, type SkySpecification } from './style'
+import { resolveStyle, type CameraOptions, type SkyPreset, type SkySpecification } from './style'
 
 export type EngineOptions = {
   modules: ModuleSpec<any>[]
@@ -137,9 +137,14 @@ export class JustMapEngine {
     if (this.#destroyed) return
 
     const { camera = {}, sky = 'day' } = options
+
+    // a Style module provides the base style — it's a foundation, resolved before the map exists
+    const styleModule = options.modules.find(m => m.def.name === 'Style')
+    const base = styleModule?.options.base
+
     this.map = new maplibregl.Map({
       container: el,
-      style: buildStyle(camera, sky),
+      style: resolveStyle(base, camera, sky),
       center: camera.center ?? [0, 0],
       zoom: camera.zoom ?? 2,
       pitch: camera.pitch ?? 0,
@@ -161,6 +166,9 @@ export class JustMapEngine {
     await new Promise<void>(resolve => this.map.once('load', resolve))
     if (this.#destroyed) return
     this.map.resize()
+
+    // URL styles don't carry a projection — apply the camera's after load
+    if (camera.projection) this.map.setProjection({ type: camera.projection })
 
     for (const name of this.#order) {
       const spec = this.#specs.get(name)!

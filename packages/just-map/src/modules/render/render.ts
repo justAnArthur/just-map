@@ -23,10 +23,13 @@ export type RenderOptions = {
   /** 3-tier LOD underlay (z6 floor + z8 mid + main) + far-field LOD cap — the tile-void fix */
   lodTiers: boolean
   attribution?: string
+  /** false hides the imagery (map-type switching without remount) */
+  visible: boolean
 }
 
 export type RenderHandle = {
   setDim(dim: boolean): void
+  setVisible(v: boolean): void
 }
 
 const brightness = (dim: boolean) => (dim ? 0.72 : 1)
@@ -35,7 +38,7 @@ const saturation = (dim: boolean) => (dim ? -0.15 : 0)
 /** Basemap raster imagery with optional dim grading and the LOD tile-void fix. */
 export const Render = module<RenderOptions>({
   name: 'Render',
-  defaults: { provider: 'satellite', dim: false, maxzoom: 19, lodTiers: true },
+  defaults: { provider: 'satellite', dim: false, maxzoom: 19, lodTiers: true, visible: true },
   create(engine, options) {
     const { map } = engine
     const preset = options.provider === 'tiles' ? undefined : PRESETS[options.provider]
@@ -74,6 +77,12 @@ export const Render = module<RenderOptions>({
     if (options.lodTiers) map.setSourceTileLodParams(6.5, 3, 'render')
 
     const ids = options.lodTiers ? ['render-floor', 'render-lo', 'render'] : ['render']
+    const setVisibility = (v: string) => {
+      for (const id of ids) map.setLayoutProperty(id, 'visibility', v)
+    }
+
+    if (!options.visible) setVisibility('none')
+
     return {
       setDim(dim: boolean) {
         for (const id of ids) {
@@ -81,10 +90,13 @@ export const Render = module<RenderOptions>({
           map.setPaintProperty(id, 'raster-saturation', saturation(dim))
         }
       },
+      setVisible(v: boolean) {
+        setVisibility(v ? 'visible' : 'none')
+      },
     }
   },
   update(handle: RenderHandle, options, prev) {
-    if (options.dim === prev.dim) return
-    handle.setDim(options.dim)
+    if (options.dim !== prev.dim) handle.setDim(options.dim)
+    if (options.visible !== prev.visible) handle.setVisible(options.visible)
   },
 })

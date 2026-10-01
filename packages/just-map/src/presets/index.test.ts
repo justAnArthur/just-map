@@ -16,11 +16,11 @@ describe('presets', () => {
     expect(b.modules.find(m => m.def.name === 'Render')!.options.dim).toBe(true)
   })
 
-  test('flat is mercator without terrain', () => {
+  test('flat is mercator vector streets without terrain', () => {
     const b = flat()
-    expect(b.modules.map(m => m.def.name)).toEqual(['Render', 'Navigation'])
+    expect(b.modules.map(m => m.def.name)).toEqual(['Style', 'Navigation'])
     expect(b.camera!.projection).toBe('mercator')
-    expect(b.modules[0].options.provider).toBe('osm')
+    expect(b.modules[0].options.base).toBe('positron')
   })
 
   test('history and realtime module sets', () => {

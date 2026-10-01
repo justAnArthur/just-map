@@ -1,6 +1,6 @@
 import type { ModuleFactory, ModuleSpec } from '../core/module'
 import type { CameraOptions, SkyPreset, SkySpecification } from '../core/style'
-import { Render, type RenderOptions } from '../modules/render'
+import { Render, Style, type RenderOptions, type StyleOptions } from '../modules/render'
 import { Buildings, Terrain, type BuildingsOptions, type TerrainOptions } from '../modules/terrain'
 import { Breadcrumbs, Tracks, type BreadcrumbsOptions, type TracksOptions } from '../modules/data'
 import { FollowCam, Playback, type FollowCamOptions, type PlaybackOptions } from '../modules/animation'
@@ -15,6 +15,7 @@ export type PresetBundle = {
 /** per-module option overrides, keyed by the lowercased module name */
 export type PresetOverrides = {
   render?: Partial<RenderOptions>
+  style?: Partial<StyleOptions>
   terrain?: Partial<TerrainOptions>
   buildings?: Partial<BuildingsOptions>
   tracks?: Partial<TracksOptions>
@@ -50,11 +51,11 @@ export const googleEarth = (overrides: PresetOverrides = {}) =>
     overrides,
   )
 
-/** Cheap flat 2D view: mercator, OSM streets, no terrain. */
+/** Cheap flat 2D view: mercator, light vector streets, no terrain. */
 export const flat = (overrides: PresetOverrides = {}) =>
   bundle(
     [
-      ['render', Render, { provider: 'osm', dim: false } as Partial<RenderOptions>],
+      ['style', Style, { base: 'positron' } as Partial<StyleOptions>],
       ['navigation', Navigation, {}],
     ],
     { projection: 'mercator', pitch: 0 },

@@ -14,12 +14,15 @@ export type TerrainOptions = {
   hillshade: boolean
   /** hillshade relief intensity */
   hillshadeExaggeration: number
+  /** false detaches terrain (map-type switching without remount) */
+  enabled: boolean
 }
 
 export type TerrainHandle = {
   /** no-op when equal to last applied — avoids resetting terrain mid-slider-gesture */
   setExaggeration(v: number): void
   setHillshade(on: boolean): void
+  setEnabled(on: boolean): void
 }
 
 const RELIEF = 'terrain-relief'
@@ -37,6 +40,7 @@ export const Terrain = module<TerrainOptions>({
     exaggeration: 1.8,
     hillshade: true,
     hillshadeExaggeration: 0.35,
+    enabled: true,
   },
 
   create(engine, options) {
@@ -66,23 +70,29 @@ export const Terrain = module<TerrainOptions>({
       },
     })
 
-    map.setTerrain({ source: 'terrain', exaggeration: options.exaggeration })
+    if (options.enabled) map.setTerrain({ source: 'terrain', exaggeration: options.exaggeration })
 
     let applied = options.exaggeration
+    let enabled = options.enabled
     const handle: TerrainHandle = {
       setExaggeration(v) {
         if (v === applied) return
         applied = v
-        map.setTerrain({ source: 'terrain', exaggeration: v })
+        if (enabled) map.setTerrain({ source: 'terrain', exaggeration: v })
       },
       setHillshade(on) {
         map.setLayoutProperty(RELIEF, 'visibility', on ? 'visible' : 'none')
+      },
+      setEnabled(on) {
+        enabled = on
+        map.setTerrain(on ? { source: 'terrain', exaggeration: applied } : null)
       },
     }
     return handle
   },
 
   update(handle: TerrainHandle, options, prev) {
+    if (options.enabled !== prev.enabled) handle.setEnabled(options.enabled)
     if (options.exaggeration !== prev.exaggeration) handle.setExaggeration(options.exaggeration)
     if (options.hillshade !== prev.hillshade) handle.setHillshade(options.hillshade)
   },
