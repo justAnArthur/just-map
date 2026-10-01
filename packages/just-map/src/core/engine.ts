@@ -163,7 +163,7 @@ export class JustMapEngine {
     const base = styleModule?.options.base
     const style = resolveStyle(base, camera, sky)
 
-    this.map = new maplibre-gl.Map({
+    this.map = new maplibregl.Map({
       container: el,
       style,
       center: camera.center ?? [0, 0],
