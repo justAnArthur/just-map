@@ -15,7 +15,7 @@ export type StyleOptions = {
   /** preset name, style URL, or a full style spec */
   base: keyof typeof STYLE_PRESETS | (string & {}) | StyleSpecification
   tweaks: StyleTweak[]
-  /** labels/main-roads/borders over raster imagery, everything else hidden — the Google hybrid look. Put Render before Style in the modules array. */
+  /** labels/main-roads/borders over raster imagery, everything else hidden — the Google hybrid look */
   hybrid: boolean
   /** which base layers survive hybrid mode (labels, names, main roads, borders by default) */
   hybridKeep?: RegExp | ((layerId: string) => boolean)

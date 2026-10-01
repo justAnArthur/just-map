@@ -51,6 +51,11 @@ body,
   color: #0b1220;
 }
 
+.btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .card label {
   display: flex;
   gap: 7px;

@@ -80,7 +80,7 @@ Style({ base: 'positron', tweaks: [
 |---|---|---|
 | `base` | `'positron'` | `'positron' \| 'liberty' \| 'bright'` (free OpenFreeMap vector styles), any style URL, or a full style spec |
 | `tweaks` | `[]` | `{ match: id/regex/fn, paint, layout, visibility }` applied to matching base layers |
-| `hybrid` | `false` | keep only labels/main-roads/borders and draw them **above raster imagery** — pair with `Render({ provider: 'satellite' })` (put Render first) for the Google satellite-with-labels look |
+| `hybrid` | `false` | keep only labels/main-roads/borders and draw them **above raster imagery** — pair with `Render({ provider: 'satellite' })` for the Google satellite-with-labels look (module order doesn't matter) |
 | `hybridKeep` | `/label\|name\|^boundary_\|^highway_(major\|motorway)/` | which base layers survive hybrid mode |
 | `visible` | `true` | hide the entire base (pure-satellite mode) |
 

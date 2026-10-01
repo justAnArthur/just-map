@@ -183,7 +183,13 @@ export class JustMapEngine {
     // URL styles don't carry a projection — apply the camera's after load
     if (camera.projection) this.map.setProjection({ type: camera.projection })
 
-    for (const name of this.#order) {
+    // Style is the foundation: it must create before siblings so its base-layer
+    // snapshot is exactly the style's own layers — array position doesn't matter
+    const createOrder = this.#order.includes('Style')
+      ? ['Style', ...this.#order.filter(n => n !== 'Style')]
+      : this.#order
+
+    for (const name of createOrder) {
       const spec = this.#specs.get(name)!
       const handle = spec.def.create?.(this, spec.options)
       if (handle !== undefined) this.#handles.set(name, handle)

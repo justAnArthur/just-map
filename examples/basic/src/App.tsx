@@ -11,8 +11,18 @@ type Base = 'positron' | 'liberty' | 'bright'
 
 const CAMERA: CameraOptions = { center: [17.1077, 48.1486], zoom: 12.4, projection: 'mercator', pitch: 0 }
 
-const Btn = ({ on, onClick, children }: { on?: boolean; onClick: () => void; children: React.ReactNode }) => (
-  <button className={on ? 'btn on' : 'btn'} onClick={onClick}>
+const Btn = ({
+  on,
+  disabled,
+  onClick,
+  children,
+}: {
+  on?: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) => (
+  <button className={on ? 'btn on' : 'btn'} disabled={disabled} onClick={onClick}>
     {children}
   </button>
 )
@@ -32,13 +42,13 @@ export default function App() {
 
   // fixed module set — Map/Hybrid/Satellite/3D are pure option changes
   const modules = [
-    Render({ provider: 'satellite', dim: true, visible: mapType !== 'map' }),
     Style({
       base,
       hybrid: mapType === 'hybrid',
       visible: mapType !== 'satellite',
       tweaks,
     }),
+    Render({ provider: 'satellite', dim: true, visible: mapType !== 'map' }),
     Terrain({ enabled: is3d, exaggeration: 1.6, hillshade: true }),
     Navigation(),
   ]
@@ -69,7 +79,7 @@ export default function App() {
 
         <div className="row">
           {(['positron', 'liberty', 'bright'] as Base[]).map(b => (
-            <Btn key={b} on={base === b} onClick={() => setBase(b)}>
+            <Btn key={b} on={base === b} disabled={mapType === 'satellite'} onClick={() => setBase(b)}>
               {b}
             </Btn>
           ))}
