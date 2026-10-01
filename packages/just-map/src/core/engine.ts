@@ -184,23 +184,21 @@ export class JustMapEngine {
     this.#observer = new ResizeObserver(() => this.map.resize())
     this.#observer.observe(el)
 
-    if (typeof style !== 'object') {
-      // URL styles reach the browser asynchronously; the load event may still
-      // wait on frames in frozen-rAF webviews, so also poll the style object —
-      // layers present means it is live and modules can draw into it
-      await new Promise<void>(resolve => {
-        this.map.once('load', resolve)
+    // modules may only draw once the style object is live: URL styles stream in
+    // asynchronously, inline specs apply on the first styledata — and frozen-rAF
+    // webviews defer the load event, so also poll (guarded: getStyle() itself is
+    // undefined until the constructor style applies)
+    await new Promise<void>(resolve => {
+      this.map.once('load', resolve)
+      this.map.once('styledata', resolve)
 
-        const poll = window.setInterval(() => {
-          if (this.#destroyed || this.map.isStyleLoaded() || (this.map.getStyle()?.layers?.length ?? 0) > 0) {
-            window.clearInterval(poll)
-            resolve()
-          }
-        }, 250)
-      })
-    }
-    // inline style specs are live at construction — module addSource/addLayer
-    // calls queue on the style and apply when frames run
+      const poll = window.setInterval(() => {
+        if (this.#destroyed || this.map.isStyleLoaded() || (this.map.getStyle()?.layers?.length ?? 0) > 0) {
+          window.clearInterval(poll)
+          resolve()
+        }
+      }, 250)
+    })
     if (this.#destroyed) return
     this.map.resize()
 
