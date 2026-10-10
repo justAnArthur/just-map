@@ -85,7 +85,7 @@ examples/basic        styling playground: map/hybrid/satellite + base styles + t
 examples/playground   kitchen sink: every module, toggle/slider per option
 examples/gps-matching raw GPS breadcrumbs vs road-snapped routes (OSRM /match)
 examples/outdoor      terrain-first: globe, big exaggeration, mountain track
-examples/fleet        real-time + history vehicle tracking in one app
+examples/fleet        live, fleet overview (vehicles, zones, pins) and history tracking
 examples/zones        geofence editing + point markers (flat 2D)
 ```
 

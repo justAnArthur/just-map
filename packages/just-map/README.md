@@ -76,7 +76,7 @@ For a full runnable app, see the `examples/` folder in the repo — `basic` is t
 | `@justanarthur/just-map/core` | `JustMapEngine` (vanilla engine + escape hatch: `engine.map`) |
 | `@justanarthur/just-map/modules/render` | `Render`, `Style` |
 | `@justanarthur/just-map/modules/terrain` | `Terrain`, `Buildings` |
-| `@justanarthur/just-map/modules/data` | `Tracks`, `Breadcrumbs`, `Markers`, `ZoneEditor` |
+| `@justanarthur/just-map/modules/data` | `Tracks`, `Breadcrumbs`, `Markers`, `ZoneEditor`, `Vehicles`, `Zones`, `Pins` |
 | `@justanarthur/just-map/modules/animation` | `Playback`, `FollowCam` |
 | `@justanarthur/just-map/modules/navigation` | `Gestures`, `Navigation` |
 | `@justanarthur/just-map/presets` | `presets.googleEarth / flat / history / realtime` |
@@ -135,7 +135,8 @@ Roadmap: `Graticule`.
 | `hillshade` / `hillshadeExaggeration` | `true` / `0.35` |
 | `enabled` | `true` | `false` detaches terrain (map-type switching without remount) |
 
-**`Buildings`** — OSM 3D extrusions (OpenFreeMap planet tiles), `minzoom 14`, `opacity 0.7`.
+**`Buildings`** — OSM 3D extrusions (OpenFreeMap planet tiles), `minzoom 14`, `opacity 0.7`,
+`visible: true` (toggle without remount).
 Soft-depends on `3d`: renders flat extrusions without terrain.
 
 Roadmap: `Contours`, slope shading.
@@ -147,12 +148,15 @@ choreography (idle/glow/active/dash layers), start/end markers, fit-on-select, c
 
 | Option | Default |
 |---|---|
-| `data` | `[]` — `Track { id, name?, coords, times?, speeds?, properties? }` |
+| `data` | `[]` — `Track { id, name?, color?, coords, times?, speeds?, properties? }`; `color` tints the idle line |
 | `colorBy` | — `{ property: 'speed' \| string, palette: 'viridis' \| string[], max: 130 }` |
 | `color` | `'#38bdf8'` (when no `colorBy`) |
 | `selectedId` / `onSelect` | — |
 | `styling` | `{ glow: true, width: 6.5, dash: true }` |
+| `idle` | `{ color: '#cbd5e1', width: 2.5, opacity: 0.55 }` — unselected tracks, partial overrides merge |
 | `fit` | `{ padding: 90, pitch: 58, maxZoom: 13.5, duration: 2000 }`, `false` to disable |
+
+Handle: `select(id)`, `setData(data)`, `fit(id?)`, `fitAll(padding?)`.
 
 **`Breadcrumbs`** — the raw GPS truth: sparse-fix line + dots overlay (`fixes`, `color`, `visible`).
 
@@ -163,6 +167,35 @@ positions, points of interest.
 edge, drag vertices, click one to delete (`ring`, `readonly`, `color`, `onChange` per commit).
 Undo/redo belongs to the consuming app.
 
+**`Vehicles`** — many live vehicles as GL layers (not DOM): status-colored dots, SDF heading arrows,
+pill labels, a selection halo, and a glide between position updates. Click → `onSelect(id)`.
+
+| Option | Default |
+|---|---|
+| `data` | `[]` — `Vehicle { id, coord, heading?, status, label? }` |
+| `colors` | `{ driving: '#16a34a', idle: '#f59e0b', stopped: '#64748b', offline: '#a1a1aa' }` |
+| `arrowStatuses` | `['driving']` — drawn as an arrow rotated by `heading` (dot when no heading) |
+| `selectedId` / `onSelect` | — |
+| `labels` | `'auto'` — selected + everyone from `labelMinZoom`; or `'always' \| 'selected' \| 'none'` |
+| `labelMinZoom` | `13` |
+| `font` | `['Noto Sans Regular']` |
+| `tween` | `800` ms, `0` jumps; moves over 5 km always jump |
+
+Handle: `setData(data)`, `select(id?)`, `fit(ids?, { padding, maxZoom, duration })`, `flyTo(id, zoom?)`.
+
+**`Zones`** — read-only multi-polygon overlay (geofences, service areas): light fill, dashed outline,
+name label at each ring's centroid. `data: Zone { id, name?, ring, color? }[]`, `visible: true`,
+`color: '#1769e0'`, `fillOpacity: 0.08`, `labels: true`, `labelMinZoom: 11.5`, `font`, `onClick(id)`.
+Handle: `setData`, `setVisible`, `fit(id?)`.
+
+**`Pins`** — typed points of interest (alerts, stops): `data: Pin { id, coord, kind, label? }[]`,
+`colors: { critical: '#f04438', warning: '#f59e0b', info: '#3b82f6', stop: '#334155' }`,
+`selectedId`, `visible: true`, `font`, `onClick(id)`. A `label` (e.g. a stop number) renders inside
+the dot. Handle: `setData`, `select(id?)`.
+
+Text layers need glyphs: the empty base style ships OpenFreeMap's, so labels also render over
+`Render` imagery without a `Style` module.
+
 Roadmap: `Clusters`, `Heatmap`.
 
 ### animation — motion
@@ -170,6 +203,9 @@ Roadmap: `Clusters`, `Heatmap`.
 **`Playback`** — animates a vehicle dot along a track's time profile (binary-search sampler,
 ~120 ms progress events, wall-clock normalization so every trip replays in similar time).
 `follow: true` needs **`FollowCam`**; without it playback runs unfollowed (one dev warning).
+`rate` sets track seconds per wall second instead (overrides `wallTime`), `skip: [from, to][]` jumps
+over track-time ranges (long stops), `marker: 'arrow'` points along the direction of travel, and
+`onProgress(progress, speedKmh, t)` gets the track time in seconds.
 
 **`FollowCam`** — the follow camera as its own module, so live tracking can follow without a
 timeline: `follow(coord, bearing)` with frame-parity throttling (30 fps camera at 60 Hz subject
