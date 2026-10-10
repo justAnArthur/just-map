@@ -1,5 +1,5 @@
 export { Tracks } from './tracks'
-export type { ColorBy, TracksOptions, TracksHandle } from './tracks'
+export type { ColorBy, IdleStyling, TracksOptions, TracksHandle } from './tracks'
 export { Breadcrumbs } from './breadcrumbs'
 export type { BreadcrumbsOptions, BreadcrumbsHandle } from './breadcrumbs'
 export { Markers } from './markers'

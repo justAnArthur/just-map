@@ -25,7 +25,11 @@ export type ColorBy = {
 
 type Fit = { padding: number; pitch: number; maxZoom: number; duration: number }
 
+/** unselected tracks; a track's own `color` wins over `color` here */
+export type IdleStyling = { color: string; width: number; opacity: number }
+
 const DEFAULT_FIT: Fit = { padding: 90, pitch: 58, maxZoom: 13.5, duration: 2000 }
+const DEFAULT_IDLE: IdleStyling = { color: '#cbd5e1', width: 2.5, opacity: 0.55 }
 
 /** options for `Tracks` */
 export type TracksOptions = {
@@ -36,6 +40,8 @@ export type TracksOptions = {
   color: string
   selectedId?: string
   styling: { glow: boolean; width: number; dash: boolean }
+  /** merged over `{ color: '#cbd5e1', width: 2.5, opacity: 0.55 }` */
+  idle?: Partial<IdleStyling>
   /** camera fit on selection; `false` disables */
   fit: Fit | false
   onSelect?(id: string): void
@@ -46,6 +52,8 @@ export type TracksHandle = {
   select(id: string): void
   setData(data: Track[]): void
   fit(id?: string): void
+  /** fit the camera to every track */
+  fitAll(padding?: number): void
 }
 
 type TracksState = TracksHandle & {
@@ -88,7 +96,7 @@ const collection = (tracks: Track[]) => ({
   type: 'FeatureCollection' as const,
   features: tracks.map(t => ({
     type: 'Feature' as const,
-    properties: { trackId: t.id },
+    properties: { trackId: t.id, color: t.color ?? null },
     geometry: { type: 'LineString' as const, coordinates: t.coords },
   })),
 })
@@ -129,10 +137,24 @@ function gradient(t: Track, colorBy: ColorBy): ExpressionSpecification {
   return ['interpolate', ['linear'], ['line-progress'], ...stops] as ExpressionSpecification
 }
 
-function fitTrack(map: maplibregl.Map, t: Track, fit: Fit | false) {
+function fitCoords(map: maplibregl.Map, coords: Coord[], fit: Fit | false, padding?: number) {
   const f = fit === false ? DEFAULT_FIT : fit
-  const bounds = t.coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds())
-  map.fitBounds(bounds, { padding: f.padding, pitch: f.pitch, bearing: -18, maxZoom: f.maxZoom, duration: f.duration })
+  const bounds = coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds())
+  map.fitBounds(bounds, {
+    padding: padding ?? f.padding,
+    pitch: f.pitch,
+    bearing: -18,
+    maxZoom: f.maxZoom,
+    duration: f.duration,
+  })
+}
+
+const idleStyling = (options: TracksOptions): IdleStyling => ({ ...DEFAULT_IDLE, ...options.idle })
+
+function applyIdle(map: maplibregl.Map, idle: IdleStyling) {
+  map.setPaintProperty('tracks-idle', 'line-color', ['coalesce', ['get', 'color'], idle.color])
+  map.setPaintProperty('tracks-idle', 'line-width', idle.width)
+  map.setPaintProperty('tracks-idle', 'line-opacity', idle.opacity)
 }
 
 function applySelection(map: maplibregl.Map, options: TracksOptions, id: string | undefined, withFit: boolean) {
@@ -145,7 +167,7 @@ function applySelection(map: maplibregl.Map, options: TracksOptions, id: string 
   map.setPaintProperty('tracks-active', 'line-gradient', t && options.colorBy ? gradient(t, options.colorBy) : null)
   ;(map.getSource('tracks-endpoints') as GeoJSONSource).setData(endpointsData(t))
 
-  if (withFit && t && options.fit !== false) fitTrack(map, t, options.fit)
+  if (withFit && t && options.fit !== false) fitCoords(map, t.coords, options.fit)
 }
 
 /**
@@ -158,6 +180,7 @@ export const Tracks = module<TracksOptions>({
     data: [],
     color: '#38bdf8',
     styling: { glow: true, width: 6.5, dash: true },
+    idle: DEFAULT_IDLE,
     fit: DEFAULT_FIT,
   },
 
@@ -168,12 +191,17 @@ export const Tracks = module<TracksOptions>({
     map.addSource('tracks-endpoints', { type: 'geojson', data: EMPTY_FC })
 
     const sel = options.selectedId ?? ''
+    const idle = idleStyling(options)
     map.addLayer({
       id: 'tracks-idle',
       type: 'line',
       source: 'tracks',
       filter: notSel(sel),
-      paint: { 'line-color': '#cbd5e1', 'line-width': 2.5, 'line-opacity': 0.55 },
+      paint: {
+        'line-color': ['coalesce', ['get', 'color'], idle.color],
+        'line-width': idle.width,
+        'line-opacity': idle.opacity,
+      },
       layout: { 'line-cap': 'round', 'line-join': 'round' },
     })
     if (options.styling.glow) map.addLayer(glowLayer(sel))
@@ -242,7 +270,11 @@ export const Tracks = module<TracksOptions>({
       },
       fit(id) {
         const t = state.options.data.find(track => track.id === (id ?? state.options.selectedId))
-        if (t) fitTrack(map, t, state.options.fit)
+        if (t) fitCoords(map, t.coords, state.options.fit)
+      },
+      fitAll(padding) {
+        const coords = state.options.data.flatMap(track => track.coords)
+        if (coords.length) fitCoords(map, coords, state.options.fit, padding)
       },
     }
 
@@ -272,6 +304,7 @@ export const Tracks = module<TracksOptions>({
     }
 
     if (options.color !== prev.color) map.setPaintProperty('tracks-active', 'line-color', options.color)
+    if (options.idle !== prev.idle) applyIdle(map, idleStyling(options))
   },
 
   destroy(state: TracksState, engine: JustMapEngine) {

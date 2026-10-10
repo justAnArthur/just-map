@@ -13,6 +13,8 @@ export type Fix = {
 export type Track = {
   id: string
   name?: string
+  /** idle (unselected) line color; falls back to `Tracks` `idle.color` */
+  color?: string
   coords: Coord[]
   /** seconds since track start, one per coord */
   times?: number[]
