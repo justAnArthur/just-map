@@ -7,6 +7,7 @@ export type BuildingsOptions = {
   minzoom: number
   /** fill-extrusion opacity */
   opacity: number
+  visible: boolean
 }
 
 /**
@@ -20,6 +21,7 @@ export const Buildings = module<BuildingsOptions>({
     url: 'https://tiles.openfreemap.org/planet',
     minzoom: 14,
     opacity: 0.7,
+    visible: true,
   },
 
   create(engine, options) {
@@ -32,6 +34,7 @@ export const Buildings = module<BuildingsOptions>({
       source: 'terrain-buildings',
       'source-layer': 'building',
       minzoom: options.minzoom,
+      layout: { visibility: options.visible ? 'visible' : 'none' },
       paint: {
         'fill-extrusion-color': '#16202e',
         'fill-extrusion-height': [
@@ -50,7 +53,9 @@ export const Buildings = module<BuildingsOptions>({
   },
 
   update(_handle, options, prev, engine) {
-    if (options.opacity === prev.opacity) return
-    engine.map.setPaintProperty('terrain-buildings', 'fill-extrusion-opacity', options.opacity)
+    const { map } = engine
+    if (options.opacity !== prev.opacity) map.setPaintProperty('terrain-buildings', 'fill-extrusion-opacity', options.opacity)
+    if (options.visible !== prev.visible)
+      map.setLayoutProperty('terrain-buildings', 'visibility', options.visible ? 'visible' : 'none')
   },
 })
