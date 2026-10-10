@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bearingBetween, distanceFractions, distKm, lengthKm, lerpAngle, lerpCoord } from './geo'
+import { bearingBetween, distanceFractions, distKm, lengthKm, lerpAngle, lerpCoord, ringCentroid } from './geo'
 
 describe('distKm', () => {
   test('zero distance', () => {
@@ -72,5 +72,33 @@ describe('lerpAngle', () => {
   test('normalizes into [0, 360)', () => {
     expect(lerpAngle(-90, 0, 0)).toBeCloseTo(270)
     expect(lerpAngle(270, 450, 1)).toBeCloseTo(90)
+  })
+})
+
+describe('ringCentroid', () => {
+  const square: [number, number][] = [
+    [17, 48],
+    [17.2, 48],
+    [17.2, 48.2],
+    [17, 48.2],
+  ]
+
+  test('square centers in the middle, open or closed', () => {
+    const [x, y] = ringCentroid(square)
+    expect(x).toBeCloseTo(17.1)
+    expect(y).toBeCloseTo(48.1)
+    expect(ringCentroid([...square, square[0]])).toEqual(ringCentroid(square))
+  })
+
+  test('weights by area, not by vertex count', () => {
+    // extra vertices crowded on one edge don't pull the centroid
+    const crowded: [number, number][] = [[17, 48], [17.05, 48], [17.1, 48], [17.15, 48], ...square.slice(1)]
+    expect(ringCentroid(crowded)[0]).toBeCloseTo(17.1)
+  })
+
+  test('collinear ring falls back to the vertex mean', () => {
+    const [x, y] = ringCentroid([[17, 48], [17.1, 48], [17.2, 48]])
+    expect(x).toBeCloseTo(17.1)
+    expect(y).toBe(48)
   })
 })

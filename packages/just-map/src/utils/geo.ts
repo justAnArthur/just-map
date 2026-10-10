@@ -49,3 +49,29 @@ export function lerpAngle(a: number, b: number, u: number) {
   const delta = ((((b - a) % 360) + 540) % 360) - 180
   return (((a + delta * u) % 360) + 360) % 360
 }
+
+/** area-weighted centroid of a ring, open or closed; vertex mean when degenerate */
+export function ringCentroid(ring: Coord[]): Coord {
+  // relative to the first vertex, so large absolute coordinates don't cancel out small areas
+  const [ox, oy] = ring[0]
+  let area = 0
+  let cx = 0
+  let cy = 0
+
+  for (let i = 0; i < ring.length; i++) {
+    const x0 = ring[i][0] - ox
+    const y0 = ring[i][1] - oy
+    const x1 = ring[(i + 1) % ring.length][0] - ox
+    const y1 = ring[(i + 1) % ring.length][1] - oy
+    const cross = x0 * y1 - x1 * y0
+    area += cross
+    cx += (x0 + x1) * cross
+    cy += (y0 + y1) * cross
+  }
+
+  if (Math.abs(area) < 1e-14) {
+    const mean = (k: 0 | 1) => ring.reduce((sum, c) => sum + c[k], 0) / ring.length
+    return [mean(0), mean(1)]
+  }
+  return [ox + cx / (3 * area), oy + cy / (3 * area)]
+}
