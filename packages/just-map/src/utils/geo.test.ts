@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bearingBetween, distanceFractions, distKm, lengthKm } from './geo'
+import { bearingBetween, distanceFractions, distKm, lengthKm, lerpAngle, lerpCoord } from './geo'
 
 describe('distKm', () => {
   test('zero distance', () => {
@@ -48,4 +48,29 @@ test('lengthKm matches the sum of segments', () => {
   ] as [number, number][]
   const expected = distKm(path[0], path[1]) + distKm(path[1], path[2])
   expect(lengthKm(path)).toBeCloseTo(expected)
+})
+
+describe('lerpCoord', () => {
+  test('endpoints and midpoint', () => {
+    expect(lerpCoord([17, 48], [18, 49], 0)).toEqual([17, 48])
+    expect(lerpCoord([17, 48], [18, 49], 1)).toEqual([18, 49])
+    expect(lerpCoord([17, 48], [18, 49], 0.5)).toEqual([17.5, 48.5])
+  })
+})
+
+describe('lerpAngle', () => {
+  test('plain interpolation', () => {
+    expect(lerpAngle(0, 90, 0.5)).toBeCloseTo(45)
+  })
+
+  test('takes the short way across north in both directions', () => {
+    expect(lerpAngle(350, 10, 0.5)).toBeCloseTo(0)
+    expect(lerpAngle(10, 350, 0.5)).toBeCloseTo(0)
+    expect(lerpAngle(350, 10, 0.25)).toBeCloseTo(355)
+  })
+
+  test('normalizes into [0, 360)', () => {
+    expect(lerpAngle(-90, 0, 0)).toBeCloseTo(270)
+    expect(lerpAngle(270, 450, 1)).toBeCloseTo(90)
+  })
 })

@@ -39,3 +39,13 @@ export function lengthKm(coords: Coord[]) {
   for (let i = 1; i < coords.length; i++) total += distKm(coords[i - 1], coords[i])
   return total
 }
+
+export function lerpCoord(a: Coord, b: Coord, u: number): Coord {
+  return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]
+}
+
+/** degrees along the shortest arc, result in [0, 360) */
+export function lerpAngle(a: number, b: number, u: number) {
+  const delta = ((((b - a) % 360) + 540) % 360) - 180
+  return (((a + delta * u) % 360) + 360) % 360
+}

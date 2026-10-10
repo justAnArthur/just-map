@@ -1,3 +1,5 @@
+import type { ExpressionSpecification } from 'maplibre-gl'
+
 type RGB = [number, number, number]
 
 const VIRIDIS: Array<[number, RGB]> = [
@@ -36,4 +38,13 @@ export function paletteSampler(palette: Palette): (v: number) => string {
   }
 
   return ramp(palette.map((c, i) => [i, hex(c)]))
+}
+
+/** `match` on a feature property; an empty map collapses to the fallback */
+export function matchColor(property: string, colors: Record<string, string>, fallback: string) {
+  const pairs = Object.entries(colors).flat()
+  if (!pairs.length) return fallback
+
+  // the spec typings can't express match's variadic label/output pairs
+  return ['match', ['get', property], ...pairs, fallback] as unknown as ExpressionSpecification
 }

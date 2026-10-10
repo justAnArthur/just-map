@@ -34,6 +34,12 @@ export const STYLE_PRESETS = {
   bright: 'https://tiles.openfreemap.org/styles/bright',
 } as const
 
+/** openfreemap glyphs, so text layers also render over raster-only maps */
+export const GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'
+
+/** a fontstack every openfreemap style and `GLYPHS` serve */
+export const FONT = ['Noto Sans Regular']
+
 export type StyleBase = keyof typeof STYLE_PRESETS | (string & {}) | StyleSpecification
 
 /** preset name or URL → the style URL maplibre fetches */
@@ -43,6 +49,7 @@ export function buildStyle(camera: CameraOptions, sky: SkyPreset | SkySpecificat
   const style: StyleSpecification = {
     version: 8,
     projection: { type: camera.projection ?? 'globe' },
+    glyphs: GLYPHS,
     sources: {},
     layers: [],
   }
@@ -66,6 +73,7 @@ export function resolveStyle(
   if (base) {
     const merged: StyleSpecification = {
       ...base,
+      glyphs: base.glyphs ?? GLYPHS,
       projection: { type: base.projection?.type ?? camera.projection ?? 'globe' },
     }
     if (!merged.sky && sky) merged.sky = typeof sky === 'string' ? { ...SKIES[sky] } : sky
