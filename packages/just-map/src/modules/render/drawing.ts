@@ -50,8 +50,15 @@ export type DrawingOptions = {
   /** 3D edge lines on buildings — the pen-drawn look */
   edges: boolean
   edgeOpacity: number
-  /** lowest zoom with extruded buildings (OpenMapTiles carries buildings from z13, heights from z14) */
+  /** lowest zoom with extruded buildings (OpenMapTiles carries buildings from z13) */
   buildingMinzoom: number
+  /**
+   * Tile detail across a pitched view: how many zoom levels the far field may
+   * drop below the camera. Lower = more distant tiles at full detail (buildings,
+   * minor roads) at the cost of more tiles. MapLibre's default is 4; 2 keeps
+   * a 70° view of a city at z13–14 everywhere (~50 tiles).
+   */
+  lodLevels: number
   labels: boolean
   font: string[]
   /** lift buildings above siblings' flat overlays (routes, zones) so they hide what's behind them */
@@ -80,7 +87,9 @@ export type DrawingHandle = {
 const SOURCE = 'drawing'
 const GRID = 'drawing-grid'
 const EDGES = 'drawing-edges'
-const EDGE_MINZOOM = 14
+const EDGE_MINZOOM = 13
+/** far-field tile budget relative to the near field: high enough that a pitched view stays at z13+ */
+const LOD_TILE_RATIO = 50
 const SOLID = ['drawing-buildings', EDGES]
 const LABELS = ['drawing-street-label', 'drawing-place-label']
 
@@ -337,8 +346,12 @@ export function buildingEdges(
 const EDGE_VS = `
 attribute vec3 a_pos;
 uniform mat4 u_matrix;
+uniform float u_centerW;
+varying float v_fade;
 void main() {
   gl_Position = u_matrix * vec4(a_pos, 1.0);
+  // thin out toward the horizon, where a whole district of edges would merge into grey haze
+  v_fade = clamp(2.6 - gl_Position.w / u_centerW, 0.0, 1.0);
   // pull edges a hair toward the camera so they win against their own faces
   gl_Position.z -= 0.0004 * gl_Position.w;
 }`
@@ -346,7 +359,8 @@ void main() {
 const EDGE_FS = `
 precision mediump float;
 uniform vec4 u_color;
-void main() { gl_FragColor = u_color; }`
+varying float v_fade;
+void main() { gl_FragColor = u_color * v_fade; }`
 
 type EdgeState = {
   layer: CustomLayerInterface
@@ -382,7 +396,7 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
 
     onAdd(_map, context) {
       gl = context
-      prog = program(gl, EDGE_VS, EDGE_FS, ['a_pos'], ['u_matrix', 'u_color'])
+      prog = program(gl, EDGE_VS, EDGE_FS, ['a_pos'], ['u_matrix', 'u_color', 'u_centerW'])
       buffer = gl.createBuffer()
       rebuild()
     },
@@ -405,6 +419,11 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
       g.useProgram(prog.program)
       const matrix = multiply(args.defaultProjectionData.mainMatrix, translation(origin[0], origin[1]))
       g.uniformMatrix4fv(prog.uniform.u_matrix, false, new Float32Array(matrix))
+      // clip-space w of the map center = camera distance to what the user is looking at
+      const m = args.defaultProjectionData.mainMatrix
+      const c = map.getCenter()
+      const centerW = m[3] * mercatorX(c.lng) + m[7] * mercatorY(c.lat) + m[15]
+      g.uniform1f(prog.uniform.u_centerW, centerW)
       g.uniform4f(prog.uniform.u_color, rgba[0] * a, rgba[1] * a, rgba[2] * a, a)
 
       g.enable(g.DEPTH_TEST)
@@ -466,6 +485,8 @@ const LIGHT: LightSpecification = { anchor: 'map', color: '#ffffff', intensity: 
  */
 export const Drawing = module<DrawingOptions>({
   name: 'Drawing',
+  // a pitched 3D scene: lets Gestures tilt and FollowCam pitch without Terrain
+  provides: ['3d'],
   defaults: {
     url: 'https://tiles.openfreemap.org/planet',
     palette: DRAWING_PALETTE,
@@ -473,7 +494,8 @@ export const Drawing = module<DrawingOptions>({
     gridOpacity: 0.32,
     edges: true,
     edgeOpacity: 0.85,
-    buildingMinzoom: 14,
+    buildingMinzoom: 13,
+    lodLevels: 2,
     labels: true,
     font: FONT,
     occlude: true,
@@ -487,6 +509,7 @@ export const Drawing = module<DrawingOptions>({
 
     let offGrid = keepImage(map, GRID, () => gridSprite(options.palette.grid, options.gridOpacity))
     map.addSource(SOURCE, { type: 'vector', url: options.url })
+    map.setSourceTileLodParams(options.lodLevels, LOD_TILE_RATIO, SOURCE)
     const specs = layers(options)
     for (const l of specs) map.addLayer(l)
 
@@ -558,6 +581,7 @@ export const Drawing = module<DrawingOptions>({
     if (options.palette.edge !== prev.palette.edge || options.edgeOpacity !== prev.edgeOpacity)
       state.edges.setStyle(options.palette.edge, options.edgeOpacity)
 
+    if (options.lodLevels !== prev.lodLevels) map.setSourceTileLodParams(options.lodLevels, LOD_TILE_RATIO, SOURCE)
     applyVisibility(engine, state, options)
   },
 

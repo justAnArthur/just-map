@@ -34,3 +34,8 @@ test('tile duplicates collapse to the largest piece; hide_3d is skipped', () => 
   const hidden = { id: 8, geometry: { type: 'Polygon', coordinates: square(18, 48, 0.0001) }, properties: { hide_3d: true } }
   expect(buildingEdges([clipped, big, hidden], [0, 0]).length).toBe(buildingEdges([big], [0, 0]).length)
 })
+
+test('Drawing is a 3D scene: provides the 3d capability and extrudes from z13', () => {
+  expect(Drawing.def.provides).toEqual(['3d'])
+  expect(Drawing().options.buildingMinzoom).toBe(13)
+})

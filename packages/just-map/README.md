@@ -125,7 +125,8 @@ Changing `base` at runtime swaps the style while preserving every other module's
 **`Drawing`** — a complete base in the style of an architectural model drawing: pale land, white roads
 with hairline casings, teal water with a nautical grid, white extruded buildings with pen-drawn 3D
 edges (roof, base and corner lines). Use it instead of `Render` / `Style`, and set
-`camera.projection: 'mercator'` (the edge layer is mercator-only).
+`camera.projection: 'mercator'` (the edge layer is mercator-only). Provides capability **`3d`**,
+so `Gestures` tilts and `FollowCam` pitches without `Terrain`.
 
 ```tsx
 <JustMap
@@ -138,9 +139,10 @@ edges (roof, base and corner lines). Use it instead of `Render` / `Style`, and s
 | Option | Default | Notes |
 |---|---|---|
 | `palette` | `DRAWING_PALETTE` | `land, green, water, grid, road, roadCasing, rail, building, edge, label` |
-| `edges` / `edgeOpacity` | `true` / `0.85` | the 3D building edge lines, from z14 |
+| `edges` / `edgeOpacity` | `true` / `0.85` | the 3D building edge lines, from z13; they thin out toward the horizon |
 | `waterGrid` / `gridOpacity` | `true` / `0.32` | |
-| `buildingMinzoom` | `14` | flat outlined footprints below it |
+| `buildingMinzoom` | `13` | flat outlined footprints below it |
+| `lodLevels` | `2` | how many zoom levels the far field of a pitched view may drop; MapLibre's default 4 leaves distant tiles at z11–12, without buildings |
 | `labels` | `true` | street + place names |
 | `occlude` | `true` | once all modules have drawn, lift buildings above siblings' lines/fills so routes and zones hide behind walls; symbols and 3D layers stay on top |
 | `url` | OpenFreeMap planet | any OpenMapTiles-schema vector source |
@@ -242,13 +244,15 @@ mercator, flat maps. Real size when zoomed in, never smaller than `minSize` px w
 | `outline` / `outlineWidth` | `'#2e353d'` / `1.1` px — ink silhouette matching `Drawing`; `false` disables |
 | `minSize` / `scale` | `34` px / `1` |
 | `shadow` | `true` |
-| `selectedId` / `onSelect` | — click picks the nearest car on screen; the selected one pulses |
-| `labels` | `'all'` — `'all' \| 'selected' \| 'none'` |
+| `cluster` | `true` — cars overlapping on screen fold into one with a `+n` label and a stacked ring; a click zooms them apart, or cycles through cars parked on one spot |
+| `selectedId` / `onSelect` | — click picks the nearest car on screen; the selected one pulses and leads its group |
+| `labels` | `'all'` — `'all' \| 'selected' \| 'none'`; colliding labels drop out, the selected one wins |
 | `tween` | `800` ms glide between updates; `0` for per-frame driving via the handle |
 
 Handle: `setData(cars)`, `select(id?)`, `get(id)` (the drawn, mid-glide position), `fit(ids?)`,
 `flyTo(id, zoom?)`. For continuous motion, set `tween: 0` and call `setData` from your own
-`requestAnimationFrame` loop. Meshes are exported too: `carMesh(kind)`, `CAR_SPECS`.
+`requestAnimationFrame` loop. Meshes are exported too: `carMesh(kind)`, `CAR_SPECS`; the grouping as
+`clusterCars(screenCars, selectedId)`.
 
 ### animation — motion
 

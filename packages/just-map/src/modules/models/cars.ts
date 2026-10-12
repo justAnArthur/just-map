@@ -53,6 +53,8 @@ export type CarsOptions = {
   scale: number
   /** soft contact shadow under each car */
   shadow: boolean
+  /** cars overlapping on screen merge into one, labelled `+n`; a click zooms in (or cycles co-located cars) */
+  cluster: boolean
   selectedId?: string
   labels: CarLabels
   font: string[]
@@ -79,6 +81,8 @@ const MAX_TWEEN_KM = 5
 /** reference car length for `minSize`, so trucks still read bigger than sedans when exaggerated */
 const REF_LENGTH = 4.7
 const PICK_MIN_PX = 16
+/** a group tighter than this can't be zoomed apart — clicks cycle through it instead */
+const CO_LOCATED_M = 12
 
 // ---------------------------------------------------------------------------------------------
 // shaders
@@ -222,6 +226,9 @@ type Gpu = { buffer: WebGLBuffer; count: number; hull: WebGLBuffer; hullCount: n
 
 type State = CarsHandle & {
   options: CarsOptions
+  /** groups from the last frame — what's on screen, for picking */
+  groups: CarGroup[]
+  labelKey: string
   from: Map<string, Car>
   to: Car[]
   t0: number
@@ -236,16 +243,66 @@ function between(a: Car, b: Car, u: number): Car {
   return { ...b, coord: lerpCoord(a.coord, b.coord, u), heading }
 }
 
-export function carCollection(cars: Car[]) {
+/** cars drawn as one: the leader is shown, `members` (leader included) are folded into it */
+export type CarGroup = { leader: Car; members: Car[] }
+
+/** a car's footprint on screen: center and drawn length in px */
+export type ScreenCar = { car: Car; x: number; y: number; size: number }
+
+/**
+ * Greedy screen-space grouping: cars whose drawn bodies overlap fold into the
+ * first one in priority order (the selected car, then data order), so a stack
+ * of cars reads as one car with a count instead of a tangle of rings and labels.
+ */
+export function clusterCars(cars: ScreenCar[], selectedId?: string, overlap = 0.8): CarGroup[] {
+  const order = [...cars].sort((a, b) => Number(b.car.id === selectedId) - Number(a.car.id === selectedId))
+  const taken = new Set<string>()
+  const groups: CarGroup[] = []
+
+  for (const lead of order) {
+    if (taken.has(lead.car.id)) continue
+    taken.add(lead.car.id)
+    const members = [lead.car]
+    for (const other of order) {
+      if (taken.has(other.car.id)) continue
+      const reach = ((lead.size + other.size) / 2) * overlap
+      if (Math.hypot(other.x - lead.x, other.y - lead.y) < reach) {
+        taken.add(other.car.id)
+        members.push(other.car)
+      }
+    }
+    groups.push({ leader: lead.car, members })
+  }
+  return groups
+}
+
+export function carCollection(groups: CarGroup[]) {
   return {
     type: 'FeatureCollection' as const,
-    features: cars.map(c => ({
-      type: 'Feature' as const,
-      properties: { id: c.id, label: c.label ?? c.id },
-      geometry: { type: 'Point' as const, coordinates: c.coord },
-    })),
+    features: groups.map(({ leader, members }) => {
+      const label = leader.label ?? leader.id
+      return {
+        type: 'Feature' as const,
+        properties: {
+          id: leader.id,
+          label: members.length > 1 ? `${label}  +${members.length - 1}` : label,
+          count: members.length,
+        },
+        geometry: { type: 'Point' as const, coordinates: leader.coord },
+      }
+    }),
   }
 }
+
+const single = (cars: Car[]): CarGroup[] => cars.map(c => ({ leader: c, members: [c] }))
+
+/** lower sorts first = placed first: the selected car's label survives collisions */
+const labelPriority = (selectedId?: string): maplibregl.DataDrivenPropertyValueSpecification<number> => [
+  'case',
+  ['==', ['get', 'id'], selectedId ?? ''],
+  0,
+  1,
+]
 
 /** label filter for the current mode */
 const labelFilter = (labels: CarLabels, selectedId?: string): maplibregl.FilterSpecification =>
@@ -268,6 +325,7 @@ export const Cars = module<CarsOptions>({
     minSize: 34,
     scale: 1,
     shadow: true,
+    cluster: true,
     labels: 'all',
     font: FONT,
     tween: 800,
@@ -287,7 +345,7 @@ export const Cars = module<CarsOptions>({
     const HALO = ringMesh(0.6)
 
     const offPill = keepImage(map, PILL, pillSprite)
-    map.addSource(LAYER, { type: 'geojson', data: carCollection(options.data) })
+    map.addSource(LAYER, { type: 'geojson', data: carCollection(single(options.data)) })
 
     const upload = (data: Float32Array) => {
       const b = gl!.createBuffer()!
@@ -372,11 +430,13 @@ export const Cars = module<CarsOptions>({
       render(g: GL, args: CustomRenderMethodInput) {
         if (!carProg || !groundProg) return
         const now = performance.now()
-        const cars = state.shown(now)
-        if (!cars.length) return
         const o = state.options
-        const vp = args.defaultProjectionData.mainMatrix
         const mpp = metersPerPixel(map.getCenter().lat, map.getZoom())
+        const groups = layout(state.shown(now), mpp)
+        state.groups = groups
+        syncLabels(groups)
+        if (!groups.length) return
+        const vp = args.defaultProjectionData.mainMatrix
         const bearing = (map.getBearing() * Math.PI) / 180
         const pitch = (map.getPitch() * Math.PI) / 180
         const viewWorld: [number, number, number] = [
@@ -386,10 +446,10 @@ export const Cars = module<CarsOptions>({
         ]
         const pulse = (now % 1600) / 1600
 
-        const items = cars.map(car => {
+        const items = groups.map(({ leader: car, members }) => {
           const kind = car.kind ?? 'sedan'
           const k = exaggeration(car.coord[1])
-          return { car, kind, k, model: modelMatrix(car, k), mesh: carMesh(kind) }
+          return { car, count: members.length, kind, k, model: modelMatrix(car, k), mesh: carMesh(kind) }
         })
 
         releaseVao(g)
@@ -408,7 +468,7 @@ export const Cars = module<CarsOptions>({
           g.uniform4f(groundProg!.uniform.u_color, color[0], color[1], color[2], color[3])
           g.drawArrays(g.TRIANGLES, 0, count)
         }
-        for (const { car, model, mesh } of items) {
+        for (const { car, count, model, mesh } of items) {
           if (o.shadow) ground(shadowBuf, scaleXY(model, mesh.width * 0.85, mesh.length * 0.66), [0, 0, 0, 0.28], SHADOW.length / 3)
 
           const status = car.status && o.colors[car.status]
@@ -418,6 +478,8 @@ export const Cars = module<CarsOptions>({
             const [cr, cg, cb] = rgb(status || '#1769e0')
             const a = selected ? 1 : 0.85
             ground(ringBuf, scaleXY(model, r, r), [cr * a, cg * a, cb * a, a], RING.length / 3)
+            // a merged group gets a second, fainter ring: reads as a stack, not one car
+            if (count > 1) ground(ringBuf, scaleXY(model, r * 1.2, r * 1.2), [cr * 0.45, cg * 0.45, cb * 0.45, 0.45], RING.length / 3)
             if (selected) {
               const pr = r * (1 + 0.55 * pulse)
               const pa = 0.35 * (1 - pulse)
@@ -464,7 +526,6 @@ export const Cars = module<CarsOptions>({
         g.frontFace(g.CCW)
 
         const gliding = o.tween > 0 && now - state.t0 < o.tween
-        if (gliding) syncLabels(cars)
         if (gliding || o.selectedId) map.triggerRepaint()
       },
     }
@@ -481,32 +542,63 @@ export const Cars = module<CarsOptions>({
         'text-size': 11,
         'text-anchor': 'bottom',
         'text-offset': [0, -2],
-        'text-allow-overlap': true,
         'icon-image': PILL,
         'icon-text-fit': 'both',
         'icon-text-fit-padding': [1, 4, 1, 4],
-        'icon-allow-overlap': true,
+        // colliding labels drop out; the selected one wins placement
+        'symbol-sort-key': labelPriority(options.selectedId),
       },
       paint: { 'text-color': '#0f172a' },
     })
 
-    const syncLabels = (cars: Car[]) => (map.getSource(LAYER) as GeoJSONSource | undefined)?.setData(carCollection(cars))
+    /** drawn length of a car in px */
+    const sizePx = (car: Car, mpp: number) => (carMesh(car.kind ?? 'sedan').length * exaggeration(car.coord[1])) / mpp
 
-    // picking: nearest car on screen within its drawn size
-    const pick = (point: maplibregl.Point) => {
-      let best: { id: string; d: number } | undefined
-      const mpp = metersPerPixel(map.getCenter().lat, map.getZoom())
-      for (const car of state.shown(performance.now())) {
+    /** this frame's groups: one per car, or merged where bodies overlap on screen */
+    const layout = (cars: Car[], mpp: number): CarGroup[] => {
+      if (!state.options.cluster) return single(cars)
+      const screen = cars.map(car => {
         const p = map.project(car.coord)
+        return { car, x: p.x, y: p.y, size: sizePx(car, mpp) }
+      })
+      return clusterCars(screen, state.options.selectedId)
+    }
+
+    // only touch the label source when what it shows changed
+    const syncLabels = (groups: CarGroup[]) => {
+      const key = groups.map(g => `${g.leader.id}:${g.members.length}:${g.leader.coord}`).join('|')
+      if (key === state.labelKey) return
+      state.labelKey = key
+      ;(map.getSource(LAYER) as GeoJSONSource | undefined)?.setData(carCollection(groups))
+    }
+
+    // picking: nearest drawn car (group leader) within its size on screen
+    const pick = (point: maplibregl.Point) => {
+      let best: { group: CarGroup; d: number } | undefined
+      const mpp = metersPerPixel(map.getCenter().lat, map.getZoom())
+      for (const group of state.groups) {
+        const p = map.project(group.leader.coord)
         const d = Math.hypot(p.x - point.x, p.y - point.y)
-        const reach = Math.max(PICK_MIN_PX, (carMesh(car.kind ?? 'sedan').length * exaggeration(car.coord[1])) / mpp / 2)
-        if (d <= reach && (!best || d < best.d)) best = { id: car.id, d }
+        const reach = Math.max(PICK_MIN_PX, sizePx(group.leader, mpp) / 2)
+        if (d <= reach && (!best || d < best.d)) best = { group, d }
       }
-      return best?.id
+      return best?.group
     }
     const onClick = (e: MapMouseEvent) => {
-      const id = pick(e.point)
-      if (id) state.options.onSelect?.(id)
+      const group = pick(e.point)
+      if (!group) return
+      const { members } = group
+      if (members.length === 1) return state.options.onSelect?.(members[0].id)
+
+      // spread out → zoom until they separate; stacked on one spot → each click selects the next one
+      const bounds = members.reduce((b, c) => b.extend(c.coord), new maplibregl.LngLatBounds())
+      const spreadM = distKm(bounds.getSouthWest().toArray() as Coord, bounds.getNorthEast().toArray() as Coord) * 1000
+      if (spreadM > CO_LOCATED_M && map.getZoom() < map.getMaxZoom() - 0.5)
+        map.fitBounds(bounds, { padding: 160, maxZoom: Math.min(map.getMaxZoom(), map.getZoom() + 3), duration: 800 })
+      else {
+        const at = members.findIndex(c => c.id === state.options.selectedId)
+        state.options.onSelect?.(members[(at + 1) % members.length].id)
+      }
     }
     const onMove = (e: MapMouseEvent) => {
       map.getCanvas().style.cursor = pick(e.point) ? 'pointer' : ''
@@ -519,6 +611,8 @@ export const Cars = module<CarsOptions>({
       from: new Map(),
       to: options.data,
       t0: 0,
+      groups: [],
+      labelKey: '',
 
       shown(now) {
         const { tween } = state.options
@@ -536,13 +630,14 @@ export const Cars = module<CarsOptions>({
         state.to = data
         state.t0 = now
         state.options = { ...state.options, data }
-        if (state.options.tween <= 0) syncLabels(data)
         map.triggerRepaint()
       },
 
       select(id) {
         state.options = { ...state.options, selectedId: id }
+        state.labelKey = ''
         map.setFilter(LABELS, labelFilter(state.options.labels, id))
+        map.setLayoutProperty(LABELS, 'symbol-sort-key', labelPriority(id))
         map.triggerRepaint()
       },
 
@@ -581,7 +676,10 @@ export const Cars = module<CarsOptions>({
     if (options.data !== prev.data) state.setData(options.data)
     if (options.labels !== prev.labels || options.selectedId !== prev.selectedId)
       map.setFilter(LABELS, labelFilter(options.labels, options.selectedId))
+    if (options.selectedId !== prev.selectedId)
+      map.setLayoutProperty(LABELS, 'symbol-sort-key', labelPriority(options.selectedId))
     if (options.font !== prev.font) map.setLayoutProperty(LABELS, 'text-font', options.font)
+    state.labelKey = ''
     map.triggerRepaint()
   },
 

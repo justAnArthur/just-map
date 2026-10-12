@@ -188,6 +188,10 @@ export default function App() {
         </section>
       )}
 
+      <div className="hint">
+        <kbd>⌘</kbd> / <kbd>Ctrl</kbd> + drag — rotate &amp; tilt
+      </div>
+
       <div className="toggles">
         <label>
           <input type="checkbox" checked={edges} onChange={e => setEdges(e.target.checked)} /> Building edges
