@@ -18,7 +18,28 @@ export function groundSampler(map: maplibregl.Map): Ground | undefined {
 
 const EXTENT = 8192
 
-type TileLike = { tileID: { canonical: { x: number; y: number; z: number } } }
+type CanonicalTile = { x: number; y: number; z: number }
+type TileLike = { tileID: { canonical: CanonicalTile } }
+
+/** the renderable tiles of a source, by canonical `z/x/y` — MapLibre internals, undefined when they're not there */
+export function renderableTiles(map: maplibregl.Map, sourceId: string): Map<string, TileLike> | undefined {
+  const manager = (map.style as any)?.tileManagers?.[sourceId]
+  if (!manager?.getRenderableIds) return undefined
+  const tiles = new Map<string, TileLike>()
+  for (const id of manager.getRenderableIds()) {
+    const tile: TileLike | undefined = manager.getTileByID(id)
+    if (!tile) continue
+    const { x, y, z } = tile.tileID.canonical
+    tiles.set(`${z}/${x}/${y}`, tile)
+  }
+  return tiles
+}
+
+/**
+ * Ground under a point given in a source tile's own coordinates (0..`extent`),
+ * looked up exactly as MapLibre lifts that tile's fill-extrusions.
+ */
+export type TileGround = (tile: CanonicalTile, x: number, y: number, extent: number) => number
 
 /**
  * The ground exactly as MapLibre lifts a vector source's fill-extrusions:
@@ -33,28 +54,46 @@ export function extrusionGroundSampler(map: maplibregl.Map, sourceId: string): G
   const { terrain } = map
   if (!terrain) return undefined
   const fallback = groundSampler(map)!
-  const manager = (map.style as any)?.tileManagers?.[sourceId]
-  if (!manager?.getRenderableIds) return fallback
+  const tiles = renderableTiles(map, sourceId)
+  if (!tiles?.size) return fallback
 
-  const tiles: TileLike[] = manager
-    .getRenderableIds()
-    .map((id: string) => manager.getTileByID(id))
-    .filter(Boolean)
-    // most detailed first: that's the tile a building renders from
-    .sort((a: TileLike, b: TileLike) => b.tileID.canonical.z - a.tileID.canonical.z)
+  // most detailed first: that's the tile a building renders from
+  const zooms = [...new Set([...tiles.values()].map(t => t.tileID.canonical.z))].sort((a, b) => b - a)
 
   return (lng, lat) => {
     const mx = (lng + 180) / 360
     const my = (1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2
-    for (const tile of tiles) {
-      const { x, y, z } = tile.tileID.canonical
+    for (const z of zooms) {
       const n = 2 ** z
-      const tx = mx * n - x
-      const ty = my * n - y
-      if (tx >= 0 && tx < 1 && ty >= 0 && ty < 1)
+      const x = Math.floor(mx * n)
+      const y = Math.floor(my * n)
+      const tile = tiles.get(`${z}/${x}/${y}`)
+      if (tile)
         // MapLibre stores the centroid as integer tile units
-        return terrain.getElevation(tile.tileID as any, Math.floor(tx * EXTENT), Math.floor(ty * EXTENT), EXTENT)
+        return terrain.getElevation(
+          tile.tileID as any,
+          Math.floor((mx * n - x) * EXTENT),
+          Math.floor((my * n - y) * EXTENT),
+          EXTENT,
+        )
     }
+    return fallback(lng, lat)
+  }
+}
+
+/** `TileGround` for a source's tiles; undefined without terrain or MapLibre's tile internals */
+export function tileGroundSampler(map: maplibregl.Map, sourceId: string): TileGround | undefined {
+  const { terrain } = map
+  if (!terrain) return undefined
+  const tiles = renderableTiles(map, sourceId)
+  if (!tiles) return undefined
+  const fallback = groundSampler(map)!
+  return ({ x, y, z }, px, py, extent) => {
+    const tile = tiles.get(`${z}/${x}/${y}`)
+    if (tile) return terrain.getElevation(tile.tileID as any, Math.floor(px), Math.floor(py), extent)
+    const n = 2 ** z
+    const lng = ((x + px / extent) / n) * 360 - 180
+    const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + py / extent)) / n))) * 180) / Math.PI
     return fallback(lng, lat)
   }
 }

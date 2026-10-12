@@ -155,6 +155,8 @@ function applyIdle(map: maplibregl.Map, idle: IdleStyling) {
   map.setPaintProperty('tracks-idle', 'line-color', ['coalesce', ['get', 'color'], idle.color])
   map.setPaintProperty('tracks-idle', 'line-width', idle.width)
   map.setPaintProperty('tracks-idle', 'line-opacity', idle.opacity)
+  // invisible idle tracks still cost a draw per tile: skip the layer instead
+  map.setLayoutProperty('tracks-idle', 'visibility', idle.opacity > 0 ? 'visible' : 'none')
 }
 
 function applySelection(map: maplibregl.Map, options: TracksOptions, id: string | undefined, withFit: boolean) {
@@ -202,7 +204,7 @@ export const Tracks = module<TracksOptions>({
         'line-width': idle.width,
         'line-opacity': idle.opacity,
       },
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      layout: { 'line-cap': 'round', 'line-join': 'round', visibility: idle.opacity > 0 ? 'visible' : 'none' },
     })
     if (options.styling.glow) map.addLayer(glowLayer(sel))
     map.addLayer({

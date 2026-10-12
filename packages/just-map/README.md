@@ -69,6 +69,14 @@ For a full runnable app, see the `examples/` folder in the repo — `basic` is t
 (map/hybrid/satellite switcher), `fleet` is a complete live + history tracking app, `camasys` is the
 white 3D drawing map with 3D cars.
 
+## Performance
+
+The 3D layers are built to stay off the frame budget: `Cars` draws instanced, `Drawing` edges
+build per tile once and are cached, and custom layers restore GL state from MapLibre's own state
+cache instead of reading it back from the GPU. The largest remaining cost on hi-DPI screens is
+fill rate — `pixelRatio` (`<JustMap pixelRatio={1}>` or the engine option) trades sharpness for up
+to 4× fewer pixels; `antialias` costs extra GPU time on top.
+
 ## Packages
 
 | Subpath | Exports |
@@ -149,8 +157,10 @@ so `Gestures` tilts and `FollowCam` pitches without `Terrain`.
 | `url` | OpenFreeMap planet | any OpenMapTiles-schema vector source |
 | `visible` | `true` | |
 
-Edges are rebuilt from the loaded tiles after each move. Handle: `refresh()`. Pass `antialias` to
-`<JustMap>` (or the engine) for smooth 1px lines.
+Edges are built per tile straight from the vector tile geometry and cached: a move only builds
+tiles that weren't seen before (at most every 250 ms, also while the camera never stops, as in
+follow mode), and a fresh build is time-sliced so it never stalls a frame for long. Handle:
+`refresh()`. Pass `antialias` to `<JustMap>` (or the engine) for smooth 1px lines.
 
 Roadmap: `Graticule`.
 
@@ -186,7 +196,7 @@ choreography (idle/glow/active/dash layers), start/end markers, fit-on-select, c
 | `color` | `'#38bdf8'` (when no `colorBy`) |
 | `selectedId` / `onSelect` | — |
 | `styling` | `{ glow: true, width: 6.5, dash: true }` |
-| `idle` | `{ color: '#cbd5e1', width: 2.5, opacity: 0.55 }` — unselected tracks, partial overrides merge |
+| `idle` | `{ color: '#cbd5e1', width: 2.5, opacity: 0.55 }` — unselected tracks, partial overrides merge; `opacity: 0` skips the layer |
 | `fit` | `{ padding: 90, pitch: 58, maxZoom: 13.5, duration: 2000 }`, `false` to disable |
 
 Handle: `select(id)`, `setData(data)`, `fit(id?)`, `fitAll(padding?)`.
@@ -251,7 +261,9 @@ mercator only; cars sit on `Terrain` when it's installed. Real size when zoomed 
 | `labels` | `'all'` — `'all' \| 'selected' \| 'none'`; colliding labels drop out, the selected one wins |
 | `tween` | `800` ms glide between updates; `0` for per-frame driving via the handle |
 
-Handle: `setData(cars)`, `select(id?)`, `get(id)` (the drawn, mid-glide position), `fit(ids?)`,
+Rendering is instanced — one draw call per body style, whatever the fleet size — with off-screen
+cars culled and clustering on a spatial grid: a thousand moving cars cost ~1 ms of main thread a
+frame. Handle: `setData(cars)`, `select(id?)`, `get(id)` (the drawn, mid-glide position), `fit(ids?)`,
 `flyTo(id, zoom?)`. For continuous motion, set `tween: 0` and call `setData` from your own
 `requestAnimationFrame` loop. Meshes are exported too: `carMesh(kind)`, `CAR_SPECS`; the grouping as
 `clusterCars(screenCars, selectedId)`.

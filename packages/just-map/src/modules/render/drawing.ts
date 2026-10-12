@@ -11,10 +11,11 @@ import { module } from '../../core/module'
 import type { JustMapEngine } from '../../core/engine'
 import { FONT } from '../../core/style'
 import { keepImage, type Sprite } from '../../utils/images'
-import { extrusionGroundSampler, type Ground } from '../../utils/terrain'
+import { extrusionGroundSampler, tileGroundSampler, type Ground, type TileGround } from '../../utils/terrain'
 import {
   cameraPosition,
   mercatorMeter,
+  mercatorMeterAtY,
   mercatorX,
   mercatorY,
   multiply,
@@ -91,8 +92,6 @@ const SOURCE = 'drawing'
 const GRID = 'drawing-grid'
 const EDGES = 'drawing-edges'
 const EDGE_MINZOOM = 13
-/** buildings sampled to notice the terrain under them changing */
-const PROBES = 24
 /** far-field tile budget relative to the near field: high enough that a pitched view stays at z13+ */
 const LOD_TILE_RATIO = 50
 /**
@@ -291,9 +290,223 @@ function layers(o: DrawingOptions): LayerSpecification[] {
 const PULL: [number, number] = [0.5, 0.003]
 
 /** angle (deg) between incoming and outgoing ring edges above which a wall corner gets a vertical edge */
-const CORNER_DEG = 25
+const CORNER_COS = Math.cos((25 * Math.PI) / 180)
+
+/** edge geometry is relative to an origin; past this (mercator units, ~80 km) the tile cache re-anchors */
+const ORIGIN_RESET = 0.002
+/** built tiles kept beyond the ones on screen, for zooming and panning back */
+const SPARE_TILES = 96
+/** ground samples per tile, re-checked while terrain tiles stream in */
+const TILE_PROBES = 3
+/** at most one edge rebuild per this many ms while the camera keeps moving */
+const REBUILD_MS = 250
+/** main-thread time one rebuild may spend building new tiles; the rest continue next slice */
+const SLICE_MS = 8
 
 type Ring = [number, number][]
+
+/** growable float32 list: no boxed numbers on the way to the GPU */
+class Floats {
+  data = new Float32Array(4096)
+  length = 0
+
+  reserve(n: number) {
+    if (this.length + n <= this.data.length) return
+    let size = this.data.length * 2
+    while (size < this.length + n) size *= 2
+    const next = new Float32Array(size)
+    next.set(this.data.subarray(0, this.length))
+    this.data = next
+  }
+
+  segment(ax: number, ay: number, az: number, bx: number, by: number, bz: number) {
+    this.reserve(6)
+    const d = this.data
+    const i = this.length
+    d[i] = ax
+    d[i + 1] = ay
+    d[i + 2] = az
+    d[i + 3] = bx
+    d[i + 4] = by
+    d[i + 5] = bz
+    this.length = i + 6
+  }
+
+  take() {
+    return this.data.slice(0, this.length)
+  }
+}
+
+/** one building piece in mercator: rings without their closing vertex, as flat x/y pairs */
+type Outline = {
+  rings: { xy: Float64Array; hole: boolean; poly: number }[]
+  /** ground under each polygon, meters */
+  lifts: number[]
+  height: number
+  base: number
+  /** vertex count — of the pieces of one building clipped by tiles, the largest wins */
+  size: number
+}
+
+type Props = Record<string, any>
+
+const heights = (p: Props) => ({ height: p.render_height ?? 5, base: p.render_min_height ?? 0 })
+
+/** average of a ring's distinct vertices (`xy` pairs), the point MapLibre lifts an extrusion by */
+function centroid(xy: ArrayLike<number>, n: number): [number, number] {
+  let x = 0
+  let y = 0
+  for (let i = 0; i < n; i++) {
+    x += xy[i * 2]
+    y += xy[i * 2 + 1]
+  }
+  return [x / (n || 1), y / (n || 1)]
+}
+
+/** GeoJSON polygon(s) in lng/lat → outline; terrain via `ground(lng, lat)` */
+function outlineFromGeoJSON(geometry: { type: string; coordinates?: unknown }, props: Props, ground?: Ground): Outline | undefined {
+  const { type, coordinates } = geometry
+  const polys = type === 'Polygon' ? [coordinates as Ring[]] : type === 'MultiPolygon' ? (coordinates as Ring[][]) : []
+  const rings: Outline['rings'] = []
+  const lifts: number[] = []
+  let size = 0
+  polys.forEach((poly, p) => {
+    poly.forEach((ring, i) => {
+      size += ring.length
+      const n = ring.length - 1 // closed ring: last == first
+      const xy = new Float64Array(Math.max(0, n) * 2)
+      for (let k = 0; k < n; k++) {
+        xy[k * 2] = mercatorX(ring[k][0])
+        xy[k * 2 + 1] = mercatorY(ring[k][1])
+      }
+      if (i === 0 && ground) {
+        // Terrain lifts each polygon by the ground under its outer ring's centroid,
+        // as MapLibre's extrusions do. Per polygon, not per feature: OpenMapTiles
+        // merges many buildings into one MultiPolygon feature.
+        const lnglat = ring.slice(0, Math.max(1, n)).flat()
+        const [lng, lat] = centroid(lnglat, Math.max(1, n))
+        lifts[p] = ground(lng, lat)
+      }
+      rings.push({ xy, hole: i > 0, poly: p })
+    })
+  })
+  return rings.length ? { rings, lifts, ...heights(props), size } : undefined
+}
+
+type TilePoint = { x: number; y: number }
+type CanonicalTile = { x: number; y: number; z: number }
+/** the vector tile feature behind a `querySourceFeatures` result (MapLibre internals) */
+type RawFeature = { extent: number; type: number; loadGeometry(): TilePoint[][] }
+
+/**
+ * Tile-space polygon(s) → outline, straight from the vector tile: no GeoJSON,
+ * no trigonometry — tile units map linearly onto mercator. Rings are split
+ * into polygons by winding, as the vector tile spec (and MapLibre) does.
+ */
+function outlineFromTile(raw: RawFeature, tile: CanonicalTile, props: Props, ground?: TileGround, probes?: number[]): Outline | undefined {
+  if (raw.type !== 3) return undefined
+  const { extent } = raw
+  const scale = 1 / (extent * 2 ** tile.z)
+  const x0 = tile.x * extent
+  const y0 = tile.y * extent
+  const rings: Outline['rings'] = []
+  const lifts: number[] = []
+  let size = 0
+  let poly = -1
+  let outerCcw: boolean | undefined
+
+  for (const ring of raw.loadGeometry()) {
+    const n = ring.length - 1
+    if (n < 1) continue
+    let area = 0
+    for (let k = 0, j = n - 1; k < n; j = k++) area += (ring[k].x - ring[j].x) * (ring[j].y + ring[k].y)
+    if (area === 0) continue
+    const ccw = area < 0
+    outerCcw ??= ccw
+    const hole = ccw !== outerCcw
+    if (!hole) poly++
+    if (poly < 0) continue
+
+    size += ring.length
+    const xy = new Float64Array(n * 2)
+    for (let k = 0; k < n; k++) {
+      xy[k * 2] = (x0 + ring[k].x) * scale
+      xy[k * 2 + 1] = (y0 + ring[k].y) * scale
+    }
+    if (!hole && ground) {
+      let cx = 0
+      let cy = 0
+      for (let k = 0; k < n; k++) {
+        cx += ring[k].x
+        cy += ring[k].y
+      }
+      cx /= n
+      cy /= n
+      lifts[poly] = ground(tile, cx, cy, extent)
+      if (probes && probes.length < TILE_PROBES * 3) probes.push(cx, cy, lifts[poly])
+    }
+    rings.push({ xy, hole, poly })
+  }
+  return rings.length ? { rings, lifts, ...heights(props), size } : undefined
+}
+
+/**
+ * Line segments of one outline into `out`: roof outline, base outline and
+ * vertical corner edges, `offset` meters outside the building (out from the
+ * walls, up from the roof), relative to `origin`.
+ */
+function outlineEdges(o: Outline, origin: [number, number], offset: number, out: Floats) {
+  const [ox, oy] = origin
+  for (const { xy, hole, poly } of o.rings) {
+    const n = xy.length / 2
+    if (n < 3) continue
+    const lift = o.lifts[poly] ?? 0
+    const meter = mercatorMeterAtY(xy[1])
+    const top = (lift + o.height + offset) * meter
+    const bottom = (lift + o.base) * meter
+
+    // outward = away from the building's material: right of a positive-area ring, flipped for holes
+    let area = 0
+    for (let i = 0, j = n - 1; i < n; j = i++) area += xy[j * 2] * xy[i * 2 + 1] - xy[i * 2] * xy[j * 2 + 1]
+    const side = (area > 0 ? 1 : -1) * (hole ? -1 : 1)
+
+    // per-edge unit normals: edge i runs from vertex i to i + 1
+    const nx = new Float64Array(n)
+    const ny = new Float64Array(n)
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n
+      const dx = xy[j * 2] - xy[i * 2]
+      const dy = xy[j * 2 + 1] - xy[i * 2 + 1]
+      const len = Math.hypot(dx, dy) || 1
+      nx[i] = (side * dy) / len
+      ny[i] = (-side * dx) / len
+    }
+
+    // vertices pushed out along the miter, capped so needle-sharp corners don't shoot out
+    const px = new Float64Array(n)
+    const py = new Float64Array(n)
+    const corner = new Uint8Array(n)
+    for (let i = 0; i < n; i++) {
+      const p = (i - 1 + n) % n
+      const dot = nx[p] * nx[i] + ny[p] * ny[i]
+      const mx = nx[p] + nx[i]
+      const my = ny[p] + ny[i]
+      const mlen = Math.hypot(mx, my) || 1
+      const push = (offset * meter) / Math.sqrt(Math.max(0.35, (dot + 1) / 2))
+      px[i] = xy[i * 2] - ox + (mx / mlen) * push
+      py[i] = xy[i * 2 + 1] - oy + (my / mlen) * push
+      corner[i] = dot < CORNER_COS ? 1 : 0
+    }
+
+    out.reserve(n * 18)
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n
+      out.segment(px[i], py[i], top, px[j], py[j], top)
+      out.segment(px[i], py[i], bottom, px[j], py[j], bottom)
+      if (corner[i]) out.segment(px[i], py[i], bottom, px[i], py[i], top)
+    }
+  }
+}
 
 /**
  * Line-segment list (xyz triplets, mercator units relative to `origin`) for
@@ -309,103 +522,19 @@ export function buildingEdges(
   ground?: Ground,
 ): Float32Array {
   // the same building arrives once per tile it touches, clipped: keep its largest piece
-  const best = new Map<
-    string | number,
-    { rings: { ring: Ring; hole: boolean; poly: number }[]; size: number; height: number; base: number }
-  >()
+  const best = new Map<string | number, Outline>()
   let anonymous = 0
-
   for (const f of features) {
     if (f.properties.hide_3d) continue
-    const { type, coordinates } = f.geometry
-    const polys = type === 'Polygon' ? [coordinates as Ring[]] : type === 'MultiPolygon' ? (coordinates as Ring[][]) : []
-    const rings = polys.flatMap((poly, p) => poly.map((ring, i) => ({ ring, hole: i > 0, poly: p })))
-    if (!rings.length) continue
-
-    const size = rings.reduce((n, r) => n + r.ring.length, 0)
+    const outline = outlineFromGeoJSON(f.geometry, f.properties, ground)
+    if (!outline) continue
     const key = f.id ?? `anon-${anonymous++}`
     const prev = best.get(key)
-    if (prev && prev.size >= size) continue
-    best.set(key, {
-      rings,
-      size,
-      height: f.properties.render_height ?? 5,
-      base: f.properties.render_min_height ?? 0,
-    })
+    if (!prev || prev.size < outline.size) best.set(key, outline)
   }
-
-  const out: number[] = []
-  const [ox, oy] = origin
-  for (const { rings, height, base } of best.values()) {
-    // Terrain lifts each polygon by the ground under its outer ring's centroid,
-    // as MapLibre's extrusions do. Per polygon, not per feature: OpenMapTiles
-    // merges many buildings into one MultiPolygon feature.
-    const lifts = new Map<number, number>()
-    if (ground)
-      for (const { ring, hole, poly } of rings) {
-        if (hole) continue
-        const k = ring.length - 1 || 1
-        let lng = 0
-        let lat = 0
-        for (let i = 0; i < k; i++) {
-          lng += ring[i][0] / k
-          lat += ring[i][1] / k
-        }
-        lifts.set(poly, ground(lng, lat))
-      }
-
-    for (const { ring, hole, poly } of rings) {
-      const lift = lifts.get(poly) ?? 0
-      const n = ring.length - 1 // closed ring: last == first
-      if (n < 3) continue
-      const meter = mercatorMeter(ring[0][1])
-      const top = (lift + height + offset) * meter
-      const bottom = (lift + base) * meter
-      const raw = ring.slice(0, n).map(([lng, lat]) => [mercatorX(lng) - ox, mercatorY(lat) - oy])
-
-      // outward = away from the building's material: right of a positive-area ring, flipped for holes
-      let area = 0
-      for (let i = 0; i < n; i++) {
-        const [x0, y0] = raw[i]
-        const [x1, y1] = raw[(i + 1) % n]
-        area += x0 * y1 - x1 * y0
-      }
-      const side = (area > 0 ? 1 : -1) * (hole ? -1 : 1)
-      const normal = (a: number[], b: number[]) => {
-        const dx = b[0] - a[0]
-        const dy = b[1] - a[1]
-        const len = Math.hypot(dx, dy) || 1
-        return [(side * dy) / len, (-side * dx) / len]
-      }
-
-      const pts: number[][] = []
-      const corner: boolean[] = []
-      for (let i = 0; i < n; i++) {
-        const prev = raw[(i - 1 + n) % n]
-        const a = raw[i]
-        const next = raw[(i + 1) % n]
-        const n0 = normal(prev, a)
-        const n1 = normal(a, next)
-        // miter, capped so needle-sharp corners don't shoot out
-        const mx = n0[0] + n1[0]
-        const my = n0[1] + n1[1]
-        const cos = Math.max(0.35, (n0[0] * n1[0] + n0[1] * n1[1] + 1) / 2)
-        const mlen = Math.hypot(mx, my) || 1
-        const push = (offset * meter) / Math.sqrt(cos)
-        pts.push([a[0] + (mx / mlen) * push, a[1] + (my / mlen) * push])
-        corner.push(n0[0] * n1[0] + n0[1] * n1[1] < Math.cos((CORNER_DEG * Math.PI) / 180))
-      }
-
-      for (let i = 0; i < n; i++) {
-        const a = pts[i]
-        const b = pts[(i + 1) % n]
-        out.push(a[0], a[1], top, b[0], b[1], top)
-        out.push(a[0], a[1], bottom, b[0], b[1], bottom)
-        if (corner[i]) out.push(a[0], a[1], bottom, a[0], a[1], top)
-      }
-    }
-  }
-  return new Float32Array(out)
+  const out = new Floats()
+  for (const outline of best.values()) outlineEdges(outline, origin, offset, out)
+  return out.take()
 }
 
 const EDGE_VS = `
@@ -435,11 +564,28 @@ void main() { gl_FragColor = u_color * v_fade; }`
 
 type EdgeState = {
   layer: CustomLayerInterface
-  rebuild(): void
+  /** rebuild from the loaded tiles; `fresh` drops every cached tile first */
+  rebuild(fresh?: boolean): void
+  /** a terrain change: re-check the ground under cached tiles, rebuild those that moved */
+  reground(): void
   setStyle(color: string, opacity: number): void
+  setEnabled(on: boolean): void
+  destroy(): void
 }
 
-function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeState {
+/** a tile's building pieces, keyed by building id, with the ground samples they were built on */
+type TileEdges = {
+  tile: CanonicalTile
+  pieces: Map<string | number, { size: number; data: Float32Array }>
+  /** (x, y, ground) triplets in tile units */
+  probes: number[]
+}
+
+type SourceFeature = { id?: string | number; properties: Props; geometry: { type: string; coordinates?: unknown } }
+/** `querySourceFeatures` results carry their tile and raw feature (MapLibre internals) */
+type TiledFeature = SourceFeature & { _vectorTileFeature?: RawFeature; _x?: number; _y?: number; _z?: number }
+
+function edgeLayer(engine: JustMapEngine, color: string, opacity: number, enabled: boolean): EdgeState {
   const { map } = engine
   let gl: GL | undefined
   let prog: Program | undefined
@@ -447,42 +593,160 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
   let count = 0
   let origin: [number, number] = [0, 0]
   let rgba = [...rgb(color), opacity]
-  /** ground samples from the last build, re-checked while terrain tiles stream in */
-  let probes: [number, number, number][] = []
 
-  const rebuild = () => {
-    if (!gl || map.getZoom() < EDGE_MINZOOM - 0.5) return
-    const c = map.getCenter()
-    origin = [mercatorX(c.lng), mercatorY(c.lat)]
-    const features = map.querySourceFeatures(SOURCE, { sourceLayer: 'building' })
+  // Buildings are cut once per tile they touch. Each tile's edges are built
+  // once and cached; a rebuild only processes tiles that weren't seen before,
+  // then concatenates — panning across a city costs the new tiles only.
+  const cache = new Map<string, TileEdges>()
+  let shown = ''
+  /** continuation of a rebuild that ran out of its time slice */
+  let resume = 0
 
-    const sampler = extrusionGroundSampler(map, SOURCE)
-    const samples: [number, number, number][] = []
-    const ground = sampler && ((lng: number, lat: number) => {
-      const z = sampler(lng, lat)
-      samples.push([lng, lat, z])
-      return z
+  const buildTile = (tile: CanonicalTile, features: TiledFeature[], ground?: TileGround): TileEdges => {
+    const pieces: TileEdges['pieces'] = new Map()
+    const probes: number[] = []
+    const out = new Floats()
+    features.forEach((f, i) => {
+      if (f.properties.hide_3d) return
+      const outline = outlineFromTile(f._vectorTileFeature!, tile, f.properties, ground, probes)
+      if (!outline) return
+      out.length = 0
+      outlineEdges(outline, origin, 0.1, out)
+      const key = f.id ?? `${tile.z}/${tile.x}/${tile.y}#${i}`
+      const prev = pieces.get(key)
+      if (!prev || prev.size < outline.size) pieces.set(key, { size: outline.size, data: out.take() })
     })
-    const data = buildingEdges(features, origin, undefined, ground)
-    const step = Math.max(1, Math.floor(samples.length / PROBES))
-    probes = samples.filter((_, i) => i % step === 0)
+    return { tile, pieces, probes }
+  }
 
+  const upload = (data: Float32Array) => {
     count = data.length / 3
-    const context = gl
+    const context = gl!
     // outside render: MapLibre caches its buffer binding, so put it back
-    preserveState(context, () => {
-      context.bindBuffer(context.ARRAY_BUFFER, buffer)
-      context.bufferData(context.ARRAY_BUFFER, data, context.STATIC_DRAW)
-    })
+    preserveState(
+      context,
+      () => {
+        context.bindBuffer(context.ARRAY_BUFFER, buffer)
+        context.bufferData(context.ARRAY_BUFFER, data, context.STATIC_DRAW)
+      },
+      map,
+    )
     map.triggerRepaint()
   }
 
+  const rebuild = (fresh = false) => {
+    if (!gl || !enabled || map.getZoom() < EDGE_MINZOOM - 0.5) return
+    const c = map.getCenter()
+    const center: [number, number] = [mercatorX(c.lng), mercatorY(c.lat)]
+    if (fresh || !cache.size || Math.hypot(center[0] - origin[0], center[1] - origin[1]) > ORIGIN_RESET) {
+      cache.clear()
+      origin = center
+      shown = ''
+    }
+
+    const features = map.querySourceFeatures(SOURCE, { sourceLayer: 'building' }) as TiledFeature[]
+    const byTile = new Map<string, { tile: CanonicalTile; features: TiledFeature[] }>()
+    const loose: TiledFeature[] = []
+    for (const f of features) {
+      if (f._vectorTileFeature?.loadGeometry && f._z !== undefined) {
+        const key = `${f._z}/${f._x}/${f._y}`
+        let group = byTile.get(key)
+        if (!group) byTile.set(key, (group = { tile: { z: f._z, x: f._x!, y: f._y! }, features: [] }))
+        group.features.push(f)
+      } else loose.push(f)
+    }
+
+    const keys = [...byTile.keys()].sort()
+    const signature = keys.join(',')
+    const ground = byTile.size ? tileGroundSampler(map, SOURCE) : undefined
+    // Time-sliced: a fresh city (first load, terrain toggled) builds over a few
+    // frames, nearest tiles first, instead of one long frame drop.
+    const distance = (key: string) => {
+      const { z, x, y } = byTile.get(key)!.tile
+      const n = 2 ** z
+      return Math.hypot((x + 0.5) / n - center[0], (y + 0.5) / n - center[1])
+    }
+    const nearest = keys.map(key => [distance(key), key] as const).sort((p, q) => p[0] - q[0])
+    const deadline = performance.now() + SLICE_MS
+    let built = false
+    let pending = false
+    for (const [, key] of nearest) {
+      const hit = cache.get(key)
+      if (hit) {
+        // most recently used last, for eviction
+        cache.delete(key)
+        cache.set(key, hit)
+        continue
+      }
+      if (performance.now() > deadline) {
+        pending = true
+        continue
+      }
+      const { tile, features: tileFeatures } = byTile.get(key)!
+      cache.set(key, buildTile(tile, tileFeatures, ground))
+      built = true
+    }
+    window.clearTimeout(resume)
+    if (pending) resume = window.setTimeout(() => rebuild(), 0)
+    if (!built && !loose.length && signature === shown) return
+    // an unfinished build doesn't count as shown: the continuation reassembles
+    shown = pending ? '' : signature
+
+    // the same building from several tiles: its largest piece wins
+    const best = new Map<string | number, { size: number; data: Float32Array }>()
+    for (const key of keys)
+      for (const [id, piece] of cache.get(key)?.pieces ?? []) {
+        const prev = best.get(id)
+        if (!prev || prev.size < piece.size) best.set(id, piece)
+      }
+    // features without tile internals (other MapLibre builds) take the GeoJSON path, uncached
+    const extra = loose.length ? buildingEdges(loose, origin, 0.1, extrusionGroundSampler(map, SOURCE)) : undefined
+
+    let total = extra?.length ?? 0
+    for (const piece of best.values()) total += piece.data.length
+    const data = new Float32Array(total)
+    let at = 0
+    for (const piece of best.values()) {
+      data.set(piece.data, at)
+      at += piece.data.length
+    }
+    if (extra) data.set(extra, at)
+    upload(data)
+
+    // evict least recently used tiles beyond the spare budget
+    const limit = keys.length + SPARE_TILES
+    for (const key of cache.keys()) {
+      if (cache.size <= limit) break
+      cache.delete(key)
+    }
+  }
+
   // Terrain tiles load without map events (and a live map is never idle), so
-  // poll a handful of building grounds; when the DEM under them changes, rebuild.
+  // re-check a few building grounds per tile; tiles whose ground moved rebuild.
+  const reground = () => {
+    if (!gl || !enabled || !cache.size) return
+    const ground = tileGroundSampler(map, SOURCE)
+    let stale = false
+    for (const [key, { tile, probes }] of cache) {
+      if (!ground) {
+        // terrain went away: anything built on it is stale
+        if (probes.length) {
+          cache.delete(key)
+          stale = true
+        }
+        continue
+      }
+      for (let i = 0; i < probes.length; i += 3)
+        if (Math.abs(ground(tile, probes[i], probes[i + 1], 8192) - probes[i + 2]) > 0.5) {
+          cache.delete(key)
+          stale = true
+          break
+        }
+    }
+    if (stale) rebuild()
+  }
   const terrainWatch = window.setInterval(() => {
-    if (!probes.length || !map.getTerrain()) return
-    const sampler = extrusionGroundSampler(map, SOURCE)
-    if (sampler && probes.some(([lng, lat, z]) => Math.abs(sampler(lng, lat) - z) > 0.5)) rebuild()
+    if (!document.hidden && map.getTerrain()) reground()
   }, 1000)
 
   const layer: CustomLayerInterface = {
@@ -494,18 +758,19 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
       gl = context
       prog = program(gl, EDGE_VS, EDGE_FS, ['a_pos'], ['u_matrix', 'u_color', 'u_centerW', 'u_camera', 'u_pull'])
       buffer = gl.createBuffer()
+      cache.clear()
       rebuild()
     },
 
     onRemove() {
-      window.clearInterval(terrainWatch)
       if (gl && buffer) gl.deleteBuffer(buffer)
       if (gl && prog) gl.deleteProgram(prog.program)
       gl = undefined
+      cache.clear()
     },
 
     render(context: GL, args: CustomRenderMethodInput) {
-      preserveState(context, () => drawEdges(context, args))
+      preserveState(context, () => drawEdges(context, args), map)
     },
   }
 
@@ -519,10 +784,9 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
 
     releaseVao(g)
     g.useProgram(prog.program)
-    const matrix = multiply(args.defaultProjectionData.mainMatrix, translation(origin[0], origin[1]))
-    g.uniformMatrix4fv(prog.uniform.u_matrix, false, new Float32Array(matrix))
-    // clip-space w of the map center = camera distance to what the user is looking at
     const m = args.defaultProjectionData.mainMatrix
+    g.uniformMatrix4fv(prog.uniform.u_matrix, false, new Float32Array(multiply(m, translation(origin[0], origin[1]))))
+    // clip-space w of the map center = camera distance to what the user is looking at
     const c = map.getCenter()
     const centerW = m[3] * mercatorX(c.lng) + m[7] * mercatorY(c.lat) + m[15]
     g.uniform1f(prog.uniform.u_centerW, centerW)
@@ -549,9 +813,19 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
   return {
     layer,
     rebuild,
+    reground,
     setStyle(c, o) {
       rgba = [...rgb(c), o]
       map.triggerRepaint()
+    },
+    setEnabled(on) {
+      if (on === enabled) return
+      enabled = on
+      if (on) rebuild()
+    },
+    destroy() {
+      window.clearInterval(terrainWatch)
+      window.clearTimeout(resume)
     },
   }
 }
@@ -618,30 +892,51 @@ export const Drawing = module<DrawingOptions>({
     const specs = layers(options)
     for (const l of specs) map.addLayer(l)
 
-    const edges = edgeLayer(engine, options.palette.edge, options.edgeOpacity)
+    const edges = edgeLayer(engine, options.palette.edge, options.edgeOpacity, options.edges && options.visible)
     map.addLayer(edges.layer, 'drawing-buildings')
     const offReady = engine.on('ready', () => {
       if (state.options.occlude) stack(map, state.ids)
     })
 
+    // Throttled, not debounced: a camera that never stops (follow mode jumps
+    // every frame) still gets fresh edges. Cached tiles make a rebuild cheap.
     let timer = 0
+    let lastRun = 0
+    let regroundNext = false
     const schedule = () => {
-      window.clearTimeout(timer)
-      timer = window.setTimeout(edges.rebuild, 120)
+      if (timer) return
+      timer = window.setTimeout(
+        () => {
+          timer = 0
+          lastRun = performance.now()
+          if (regroundNext) {
+            regroundNext = false
+            edges.reground()
+          }
+          edges.rebuild()
+        },
+        Math.max(60, lastRun + REBUILD_MS - performance.now()),
+      )
     }
     const onData = (e: { sourceId?: string; isSourceLoaded?: boolean }) => {
-      // terrain tiles arriving move every building's ground, so they rebuild the edges too
-      if (e.isSourceLoaded && (e.sourceId === SOURCE || e.sourceId === map.getTerrain()?.source)) schedule()
+      if (!e.isSourceLoaded) return
+      if (e.sourceId === SOURCE) schedule()
+      // terrain tiles arriving move buildings' ground: re-check the tiles built on it
+      else if (e.sourceId === map.getTerrain()?.source) {
+        regroundNext = true
+        schedule()
+      }
     }
+    const onTerrain = () => edges.rebuild(true)
     map.on('sourcedata', onData)
     map.on('moveend', schedule)
-    map.on('terrain', schedule)
+    map.on('terrain', onTerrain)
 
     const state: State = {
       options,
       edges,
       ids: [...specs.map(l => l.id), EDGES],
-      refresh: edges.rebuild,
+      refresh: () => edges.rebuild(true),
 
       // the grid sprite bakes palette.grid + gridOpacity in
       regrid(o) {
@@ -654,7 +949,8 @@ export const Drawing = module<DrawingOptions>({
         window.clearTimeout(timer)
         map.off('sourcedata', onData)
         map.off('moveend', schedule)
-        map.off('terrain', schedule)
+        map.off('terrain', onTerrain)
+        edges.destroy()
         for (const id of state.ids) if (map.getLayer(id)) map.removeLayer(id)
         if (map.getSource(SOURCE)) map.removeSource(SOURCE)
         offGrid()
@@ -705,4 +1001,6 @@ function applyVisibility(engine: JustMapEngine, state: State, o: DrawingOptions)
     const on = o.visible && (id === 'drawing-water-grid' ? o.waterGrid : id === EDGES ? o.edges : true)
     map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none')
   }
+  // hidden edges skip their rebuilds too
+  state.edges.setEnabled(o.visible && o.edges)
 }

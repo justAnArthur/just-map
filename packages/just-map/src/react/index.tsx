@@ -11,6 +11,8 @@ export type UseJustMapOptions = {
   theme?: JustMapTheme
   /** MSAA on the map canvas; read once at mount */
   antialias?: boolean
+  /** canvas resolution multiplier (default `devicePixelRatio`); applied live */
+  pixelRatio?: number
   onReady?(engine: JustMapEngine): void
   onError?(error: unknown): void
   onRemove?(): void
@@ -36,6 +38,7 @@ export function useJustMap(options: UseJustMapOptions) {
       sky: cbs.current.sky,
       theme: cbs.current.theme,
       antialias: cbs.current.antialias,
+      pixelRatio: cbs.current.pixelRatio,
     })
     engineRef.current = engine
     // debug affordance: the live engine, also before ready
@@ -77,6 +80,8 @@ export function useJustMap(options: UseJustMapOptions) {
     if (!engine || !ready) return
 
     for (const spec of options.modules) engine.updateModule(spec)
+
+    if (options.pixelRatio && options.pixelRatio !== engine.map.getPixelRatio()) engine.map.setPixelRatio(options.pixelRatio)
 
     if (options.theme && options.theme !== appliedTheme.current) {
       appliedTheme.current = options.theme
