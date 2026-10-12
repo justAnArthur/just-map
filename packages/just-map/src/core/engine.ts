@@ -11,6 +11,12 @@ export type EngineOptions = {
   theme?: JustMapTheme
   /** MSAA on the map canvas — smoother 3D edges and models, at some GPU cost */
   antialias?: boolean
+  /**
+   * Canvas resolution multiplier; defaults to `devicePixelRatio`. Fill cost
+   * grows with its square — `1` on a 2× display draws a quarter of the pixels,
+   * the biggest single GPU saving for 3D scenes (terrain, extrusions).
+   */
+  pixelRatio?: number
 }
 
 type EngineEvents = {
@@ -175,6 +181,7 @@ export class JustMapEngine {
       maxPitch: camera.maxPitch ?? 80,
       maxTileCacheSize: 300,
       canvasContextAttributes: { antialias: options.antialias ?? false },
+      ...(options.pixelRatio ? { pixelRatio: options.pixelRatio } : {}),
       fadeDuration: 0,
       validateStyle: false,
       refreshExpiredTiles: false,

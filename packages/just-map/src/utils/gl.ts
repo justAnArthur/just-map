@@ -12,6 +12,9 @@ export const mercatorY = (lat: number) =>
 /** one meter in mercator units at a latitude (also the z scale of a 3D custom layer) */
 export const mercatorMeter = (lat: number) => 1 / (EARTH_CIRCUMFERENCE * Math.cos((lat * Math.PI) / 180))
 
+/** `mercatorMeter` from a mercator y (0..1) — no trip through latitude: cos(lat) = 1 / cosh(π(1 − 2y)) */
+export const mercatorMeterAtY = (y: number) => Math.cosh(Math.PI * (1 - 2 * y)) / EARTH_CIRCUMFERENCE
+
 /** meters per CSS pixel at a latitude and zoom (512px tiles) */
 export const metersPerPixel = (lat: number, zoom: number) =>
   (EARTH_CIRCUMFERENCE * Math.cos((lat * Math.PI) / 180)) / (512 * 2 ** zoom)
@@ -80,13 +83,60 @@ export function program(gl: GL, vertex: string, fragment: string, attribs: strin
   }
 }
 
+/** a MapLibre cached GL value (`painter.context.depthMask` …) */
+type CachedValue = { current: unknown; dirty: boolean; set(v: unknown): void }
+
+/** the GL state our layers touch, as MapLibre's state cache names it */
+const CACHED = [
+  'depthTest',
+  'blend',
+  'cullFace',
+  'depthMask',
+  'depthFunc',
+  'blendFunc',
+  'cullFaceSide',
+  'frontFace',
+  'program',
+  'bindVertexBuffer',
+  'bindVertexArray',
+] as const
+
+/** MapLibre's GL state cache for `map`, when its internals have the expected shape */
+function stateCache(map: unknown): CachedValue[] | undefined {
+  const context = (map as { painter?: { context?: Record<string, CachedValue> } } | undefined)?.painter?.context
+  if (!context) return undefined
+  const values = CACHED.map(name => context[name])
+  return values.every(v => v && typeof v.set === 'function' && 'current' in v) ? values : undefined
+}
+
 /**
  * Runs `draw` and puts back every piece of GL state a custom layer here
  * touches. MapLibre caches GL state and does not always re-apply it after a
  * custom layer (with terrain it doesn't): a depth mask left off makes later
  * fill-extrusions skip depth writes and draw their walls through their roofs.
+ *
+ * Pass the map: the state then comes back from MapLibre's own cache (what it
+ * believes is bound), which costs a dozen GL calls. Without it every value is
+ * read back with `getParameter` — a synchronous round trip to the GPU process
+ * that costs ~0.6 ms a frame in Chrome.
  */
-export function preserveState(gl: GL, draw: () => void) {
+export function preserveState(gl: GL, draw: () => void, map?: unknown) {
+  const cache = stateCache(map)
+  if (cache) {
+    try {
+      draw()
+    } finally {
+      for (const value of cache) {
+        value.dirty = true
+        value.set(value.current)
+      }
+    }
+    return
+  }
+  preserveByQuery(gl, draw)
+}
+
+function preserveByQuery(gl: GL, draw: () => void) {
   const on = (cap: number) => gl.isEnabled(cap)
   const saved = {
     depthTest: on(gl.DEPTH_TEST),
@@ -129,4 +179,69 @@ export function preserveState(gl: GL, draw: () => void) {
  */
 export function releaseVao(gl: GL) {
   if ('bindVertexArray' in gl) gl.bindVertexArray(null)
+}
+
+export type Instancing = {
+  divisor(location: number, divisor: number): void
+  drawArrays(mode: number, first: number, count: number, instances: number): void
+}
+
+/** instanced drawing on WebGL2, or WebGL1's ANGLE_instanced_arrays (universally supported) */
+export function instancing(gl: GL): Instancing | undefined {
+  if ('drawArraysInstanced' in gl)
+    return {
+      divisor: (location, divisor) => gl.vertexAttribDivisor(location, divisor),
+      drawArrays: (mode, first, count, instances) => gl.drawArraysInstanced(mode, first, count, instances),
+    }
+  const ext = gl.getExtension('ANGLE_instanced_arrays')
+  if (!ext) return undefined
+  return {
+    divisor: (location, divisor) => ext.vertexAttribDivisorANGLE(location, divisor),
+    drawArrays: (mode, first, count, instances) => ext.drawArraysInstancedANGLE(mode, first, count, instances),
+  }
+}
+
+/** a dynamic vertex buffer refilled every frame, grown (never shrunk) to fit */
+export class StreamBuffer {
+  data: Float32Array
+  length = 0
+  buffer: WebGLBuffer
+  #capacity = 0
+
+  constructor(
+    readonly gl: GL,
+    floats = 1024,
+  ) {
+    this.data = new Float32Array(floats)
+    this.buffer = gl.createBuffer()!
+  }
+
+  /** room for `n` more floats; returns the write offset */
+  alloc(n: number) {
+    if (this.length + n > this.data.length) {
+      let size = this.data.length * 2
+      while (size < this.length + n) size *= 2
+      const next = new Float32Array(size)
+      next.set(this.data.subarray(0, this.length))
+      this.data = next
+    }
+    const at = this.length
+    this.length += n
+    return at
+  }
+
+  /** upload what was written this frame (binds the buffer) */
+  upload() {
+    const { gl } = this
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer)
+    if (this.data.length > this.#capacity) {
+      gl.bufferData(gl.ARRAY_BUFFER, this.data.byteLength, gl.DYNAMIC_DRAW)
+      this.#capacity = this.data.length
+    }
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.data.subarray(0, this.length))
+  }
+
+  delete() {
+    this.gl.deleteBuffer(this.buffer)
+  }
 }
