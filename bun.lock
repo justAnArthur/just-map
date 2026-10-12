@@ -21,6 +21,22 @@
         "vite": "^7.0.0",
       },
     },
+    "examples/camasys": {
+      "name": "just-map-example-camasys",
+      "dependencies": {
+        "@justanarthur/just-map": "workspace:*",
+        "maplibre-gl": "^5.0.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+      },
+      "devDependencies": {
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^5.0.0",
+        "typescript": "^5.9.0",
+        "vite": "^7.0.0",
+      },
+    },
     "examples/fleet": {
       "name": "just-map-example-fleet",
       "dependencies": {
@@ -103,7 +119,7 @@
     },
     "packages/just-map": {
       "name": "@justanarthur/just-map",
-      "version": "0.2.0",
+      "version": "0.5.0",
       "devDependencies": {
         "@types/react": "^19.0.0",
         "bun-types": "^1.4.2",
@@ -377,6 +393,8 @@
     "json5": ["json5@2.2.3", "", { "bin": { "json5": "lib/cli.js" } }, "sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg=="],
 
     "just-map-example-basic": ["just-map-example-basic@workspace:examples/basic"],
+
+    "just-map-example-camasys": ["just-map-example-camasys@workspace:examples/camasys"],
 
     "just-map-example-fleet": ["just-map-example-fleet@workspace:examples/fleet"],
 

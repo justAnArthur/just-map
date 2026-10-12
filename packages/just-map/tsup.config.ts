@@ -10,6 +10,7 @@ export default defineConfig({
     'modules/data': 'src/modules/data/index.ts',
     'modules/animation': 'src/modules/animation/index.ts',
     'modules/navigation': 'src/modules/navigation/index.ts',
+    'modules/models': 'src/modules/models/index.ts',
     presets: 'src/presets/index.ts',
     matching: 'src/matching/index.ts',
   },

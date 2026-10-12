@@ -1,0 +1,281 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  font: 13px/1.45 Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #1f2329;
+  background: #f2f2f0;
+  -webkit-font-smoothing: antialiased;
+}
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.app {
+  position: relative;
+  height: 100%;
+}
+
+/* floating white cards, Tesla-app calm */
+.panel,
+.card,
+.toggles {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(46, 53, 61, 0.1);
+  border-radius: 18px;
+  box-shadow: 0 10px 40px rgba(25, 32, 40, 0.12);
+}
+
+.panel {
+  top: 16px;
+  left: 16px;
+  width: 300px;
+  max-height: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel header {
+  padding: 18px 18px 12px;
+}
+.brand {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.brand span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a9099;
+}
+.summary {
+  margin-top: 10px;
+  color: #5b626b;
+}
+.summary strong {
+  color: #16a34a;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 8px;
+  overflow: auto;
+}
+.list button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  text-align: left;
+}
+.list button:hover {
+  background: #f3f4f6;
+}
+.list button.on {
+  background: #eef3fc;
+}
+.list .dot {
+  grid-row: span 2;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.dot.driving {
+  background: #16a34a;
+}
+.dot.idle {
+  background: #f59e0b;
+}
+.dot.stopped {
+  background: #64748b;
+}
+.list .plate {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.list .model {
+  grid-column: 2;
+  font-size: 12px;
+  color: #8a9099;
+}
+.list .speed {
+  grid-row: 1 / span 2;
+  grid-column: 3;
+  font-variant-numeric: tabular-nums;
+  color: #5b626b;
+}
+
+.panel footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 14px;
+  border-top: 1px solid #eceef1;
+}
+.seg {
+  display: flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: #f1f2f4;
+}
+.seg button {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #6b727b;
+}
+.seg button.on {
+  background: #fff;
+  color: #1f2329;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+.ghost {
+  padding: 6px 12px;
+  border: 1px solid #dfe2e6;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.card {
+  right: 16px;
+  bottom: 16px;
+  width: 320px;
+  padding: 18px;
+}
+.card .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.card .plate {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.card .sub {
+  color: #8a9099;
+}
+.close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: #f1f2f4;
+  font-size: 18px;
+  line-height: 1;
+}
+.speedo {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 14px 0 10px;
+}
+.speedo strong {
+  font-size: 44px;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.speedo span {
+  color: #8a9099;
+}
+.speedo em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #f1f2f4;
+}
+.speedo em.driving {
+  color: #15803d;
+  background: #e8f6ec;
+}
+.speedo em.idle {
+  color: #b45309;
+  background: #fdf3e2;
+}
+.trip {
+  display: flex;
+  justify-content: space-between;
+  color: #5b626b;
+}
+.bar {
+  height: 4px;
+  margin: 8px 0 14px;
+  border-radius: 2px;
+  background: #eceef1;
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  background: #1769e0;
+}
+.actions button {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #dfe2e6;
+  border-radius: 12px;
+  background: #fff;
+  font-weight: 600;
+}
+.actions button.primary {
+  border-color: #1f2329;
+  background: #1f2329;
+  color: #fff;
+}
+
+.toggles {
+  top: 16px;
+  right: 60px;
+  display: flex;
+  gap: 14px;
+  padding: 9px 14px;
+  border-radius: 12px;
+  color: #5b626b;
+}
+.toggles label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .panel {
+    width: auto;
+    right: 16px;
+    max-height: 40%;
+  }
+  .card {
+    left: 16px;
+    width: auto;
+  }
+  .toggles {
+    display: none;
+  }
+}

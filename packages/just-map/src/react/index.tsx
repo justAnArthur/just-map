@@ -9,6 +9,8 @@ export type UseJustMapOptions = {
   camera?: CameraOptions
   sky?: SkyPreset | SkySpecification | false
   theme?: JustMapTheme
+  /** MSAA on the map canvas; read once at mount */
+  antialias?: boolean
   onReady?(engine: JustMapEngine): void
   onError?(error: unknown): void
   onRemove?(): void
@@ -33,6 +35,7 @@ export function useJustMap(options: UseJustMapOptions) {
       camera: cbs.current.camera,
       sky: cbs.current.sky,
       theme: cbs.current.theme,
+      antialias: cbs.current.antialias,
     })
     engineRef.current = engine
     // debug affordance: the live engine, also before ready

@@ -49,6 +49,10 @@
       "types": "./dist/modules/navigation.d.ts",
       "import": "./dist/modules/navigation.js"
     },
+    "./modules/models": {
+      "types": "./dist/modules/models.d.ts",
+      "import": "./dist/modules/models.js"
+    },
     "./presets": {
       "types": "./dist/presets.d.ts",
       "import": "./dist/presets.js"

@@ -9,6 +9,8 @@ export type EngineOptions = {
   camera?: CameraOptions
   sky?: SkyPreset | SkySpecification | false
   theme?: JustMapTheme
+  /** MSAA on the map canvas — smoother 3D edges and models, at some GPU cost */
+  antialias?: boolean
 }
 
 type EngineEvents = {
@@ -172,6 +174,7 @@ export class JustMapEngine {
       bearing: camera.bearing ?? 0,
       maxPitch: camera.maxPitch ?? 80,
       maxTileCacheSize: 300,
+      canvasContextAttributes: { antialias: options.antialias ?? false },
       fadeDuration: 0,
       validateStyle: false,
       refreshExpiredTiles: false,

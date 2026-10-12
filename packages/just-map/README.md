@@ -66,7 +66,8 @@ import { presets } from '@justanarthur/just-map/presets'
 ```
 
 For a full runnable app, see the `examples/` folder in the repo — `basic` is the styling playground
-(map/hybrid/satellite switcher), `fleet` is a complete live + history tracking app.
+(map/hybrid/satellite switcher), `fleet` is a complete live + history tracking app, `camasys` is the
+white 3D drawing map with 3D cars.
 
 ## Packages
 
@@ -74,11 +75,12 @@ For a full runnable app, see the `examples/` folder in the repo — `basic` is t
 |---|---|
 | `@justanarthur/just-map/react` | `<JustMap>`, `useJustMap` |
 | `@justanarthur/just-map/core` | `JustMapEngine` (vanilla engine + escape hatch: `engine.map`) |
-| `@justanarthur/just-map/modules/render` | `Render`, `Style` |
+| `@justanarthur/just-map/modules/render` | `Render`, `Style`, `Drawing` |
 | `@justanarthur/just-map/modules/terrain` | `Terrain`, `Buildings` |
 | `@justanarthur/just-map/modules/data` | `Tracks`, `Breadcrumbs`, `Markers`, `ZoneEditor`, `Vehicles`, `Zones`, `Pins` |
 | `@justanarthur/just-map/modules/animation` | `Playback`, `FollowCam` |
 | `@justanarthur/just-map/modules/navigation` | `Gestures`, `Navigation` |
+| `@justanarthur/just-map/modules/models` | `Cars` (3D car models) |
 | `@justanarthur/just-map/presets` | `presets.googleEarth / flat / history / realtime` |
 | `@justanarthur/just-map/theme.css` | theme tokens + `.jm-*` overlay classes |
 | `@justanarthur/just-map/matching` | `snapToRoad`, `fromGpsFixes` |
@@ -119,6 +121,33 @@ Style({ base: 'positron', tweaks: [
 | `visible` | `true` | hide the entire base (pure-satellite mode) |
 
 Changing `base` at runtime swaps the style while preserving every other module's layers and sources. Map / Hybrid / Satellite / 3D switching is pure option changes — no remount (see the `basic` example). Works with `Terrain()`/`Buildings()` for 3D on any base.
+
+**`Drawing`** — a complete base in the style of an architectural model drawing: pale land, white roads
+with hairline casings, teal water with a nautical grid, white extruded buildings with pen-drawn 3D
+edges (roof, base and corner lines). Use it instead of `Render` / `Style`, and set
+`camera.projection: 'mercator'` (the edge layer is mercator-only).
+
+```tsx
+<JustMap
+  modules={[Drawing(), Tracks({ data }), Cars({ data: cars })]}
+  camera={{ center, zoom: 16, pitch: 60, projection: 'mercator' }}
+  antialias
+/>
+```
+
+| Option | Default | Notes |
+|---|---|---|
+| `palette` | `DRAWING_PALETTE` | `land, green, water, grid, road, roadCasing, rail, building, edge, label` |
+| `edges` / `edgeOpacity` | `true` / `0.85` | the 3D building edge lines, from z14 |
+| `waterGrid` / `gridOpacity` | `true` / `0.32` | |
+| `buildingMinzoom` | `14` | flat outlined footprints below it |
+| `labels` | `true` | street + place names |
+| `occlude` | `true` | once all modules have drawn, lift buildings above siblings' lines/fills so routes and zones hide behind walls; symbols and 3D layers stay on top |
+| `url` | OpenFreeMap planet | any OpenMapTiles-schema vector source |
+| `visible` | `true` | |
+
+Edges are rebuilt from the loaded tiles after each move. Handle: `refresh()`. Pass `antialias` to
+`<JustMap>` (or the engine) for smooth 1px lines.
 
 Roadmap: `Graticule`.
 
@@ -197,6 +226,29 @@ Text layers need glyphs: the empty base style ships OpenFreeMap's, so labels als
 `Render` imagery without a `Style` module.
 
 Roadmap: `Clusters`, `Heatmap`.
+
+### models — 3D objects
+
+**`Cars`** — 3D car models on the map in a clean, minimal look: a smooth body, dark glass canopy,
+aero wheels, light bars, a soft contact shadow and a status ring on the ground. Four procedural
+body styles: `sedan`, `suv`, `van`, `truck`. Plain WebGL in a custom layer (no three.js);
+mercator, flat maps. Real size when zoomed in, never smaller than `minSize` px when zoomed out.
+
+| Option | Default |
+|---|---|
+| `data` | `[]` — `Car { id, coord, heading?, kind?, color?, status?, label? }` |
+| `colors` | status → ground ring: `driving, idle, stopped, offline, alert` |
+| `paint` | `'#f4f5f7'` — default body color; `Car.color` overrides |
+| `outline` / `outlineWidth` | `'#2e353d'` / `1.1` px — ink silhouette matching `Drawing`; `false` disables |
+| `minSize` / `scale` | `34` px / `1` |
+| `shadow` | `true` |
+| `selectedId` / `onSelect` | — click picks the nearest car on screen; the selected one pulses |
+| `labels` | `'all'` — `'all' \| 'selected' \| 'none'` |
+| `tween` | `800` ms glide between updates; `0` for per-frame driving via the handle |
+
+Handle: `setData(cars)`, `select(id?)`, `get(id)` (the drawn, mid-glide position), `fit(ids?)`,
+`flyTo(id, zoom?)`. For continuous motion, set `tween: 0` and call `setData` from your own
+`requestAnimationFrame` loop. Meshes are exported too: `carMesh(kind)`, `CAR_SPECS`.
 
 ### animation — motion
 
