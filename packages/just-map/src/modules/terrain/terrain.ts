@@ -11,6 +11,8 @@ export type TerrainOptions = {
   hillshade: boolean
   /** hillshade relief intensity */
   hillshadeExaggeration: number
+  /** relief colors — the defaults suit imagery; pale ones suit `Drawing` */
+  hillshadeColors: { shadow: string; highlight: string; accent: string }
   /** false detaches terrain (map-type switching without remount) */
   enabled: boolean
 }
@@ -37,6 +39,7 @@ export const Terrain = module<TerrainOptions>({
     exaggeration: 1.8,
     hillshade: true,
     hillshadeExaggeration: 0.35,
+    hillshadeColors: { shadow: '#16202e', highlight: '#ffffff', accent: '#3a4a5e' },
     enabled: true,
   },
 
@@ -61,9 +64,9 @@ export const Terrain = module<TerrainOptions>({
       layout: { visibility: options.hillshade ? 'visible' : 'none' },
       paint: {
         'hillshade-exaggeration': options.hillshadeExaggeration,
-        'hillshade-shadow-color': '#16202e',
-        'hillshade-highlight-color': '#ffffff',
-        'hillshade-accent-color': '#3a4a5e',
+        'hillshade-shadow-color': options.hillshadeColors.shadow,
+        'hillshade-highlight-color': options.hillshadeColors.highlight,
+        'hillshade-accent-color': options.hillshadeColors.accent,
       },
     })
 
@@ -88,7 +91,13 @@ export const Terrain = module<TerrainOptions>({
     return handle
   },
 
-  update(handle: TerrainHandle, options, prev) {
+  update(handle: TerrainHandle, options, prev, engine) {
+    if (options.hillshadeColors !== prev.hillshadeColors) {
+      const { shadow, highlight, accent } = options.hillshadeColors
+      engine.map.setPaintProperty(RELIEF, 'hillshade-shadow-color', shadow)
+      engine.map.setPaintProperty(RELIEF, 'hillshade-highlight-color', highlight)
+      engine.map.setPaintProperty(RELIEF, 'hillshade-accent-color', accent)
+    }
     if (options.enabled !== prev.enabled) handle.setEnabled(options.enabled)
     if (options.exaggeration !== prev.exaggeration) handle.setExaggeration(options.exaggeration)
     if (options.hillshade !== prev.hillshade) handle.setHillshade(options.hillshade)

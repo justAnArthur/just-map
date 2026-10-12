@@ -14,7 +14,8 @@ const VIRIDIS: Array<[number, RGB]> = [
 /** a named palette or an even ramp of hex colors */
 export type Palette = 'viridis' | string[]
 
-const hex = (c: string): RGB => [1, 3, 5].map(k => parseInt(c.slice(k, k + 2), 16)) as RGB
+/** `#rrggbb` → 0..255 channels */
+export const hex = (c: string): RGB => [1, 3, 5].map(k => parseInt(c.slice(k, k + 2), 16)) as RGB
 
 function ramp(stops: Array<[number, RGB]>) {
   return (v: number) => {

@@ -74,7 +74,7 @@ bun run build       # builds packages/just-map (tsup, ESM + d.ts)
 bun run test        # bun:test unit tests
 bun run typecheck
 
-cd examples/basic && bun dev   # each example is a standalone Vite app (ports 5191-5196)
+cd examples/basic && bun dev   # each example is a standalone Vite app (ports 5191-5197)
 ```
 
 ## Structure
@@ -87,6 +87,7 @@ examples/gps-matching raw GPS breadcrumbs vs road-snapped routes (OSRM /match)
 examples/outdoor      terrain-first: globe, big exaggeration, mountain track
 examples/fleet        live, fleet overview (vehicles, zones, pins) and history tracking
 examples/zones        geofence editing + point markers (flat 2D)
+examples/camasys      white architectural-drawing map (Drawing) + 3D car fleet (Cars)
 ```
 
 ## Releases
