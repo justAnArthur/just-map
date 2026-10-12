@@ -10,6 +10,7 @@ import {
   mercatorY,
   metersPerPixel,
   multiply,
+  preserveState,
   program,
   releaseVao,
   rgb,
@@ -17,6 +18,7 @@ import {
   type Program,
 } from '../../utils/gl'
 import { keepImage, pillSprite } from '../../utils/images'
+import { groundSampler } from '../../utils/terrain'
 import type { Coord } from '../../utils/types'
 import { carMesh, STRIDE, type CarKind } from './car-mesh'
 
@@ -203,14 +205,14 @@ const LIGHT_WORLD: [number, number, number] = (() => {
  * model matrix: local meters (x right, y forward, z up) → mercator 0..1,
  * rotated by heading and scaled by `k` (exaggeration)
  */
-function modelMatrix(car: Car, k: number) {
+function modelMatrix(car: Car, k: number, groundM = 0) {
   const [lng, lat] = car.coord
   const s = mercatorMeter(lat) * k
   const h = (-(car.heading ?? 0) * Math.PI) / 180
   const c = Math.cos(h)
   const sn = Math.sin(h)
   // mercator y grows south, hence the negated north component
-  return new Float64Array([s * c, -s * sn, 0, 0, -s * sn, -s * c, 0, 0, 0, 0, s, 0, mercatorX(lng), mercatorY(lat), 0, 1])
+  return new Float64Array([s * c, -s * sn, 0, 0, -s * sn, -s * c, 0, 0, 0, 0, s, 0, mercatorX(lng), mercatorY(lat), groundM * mercatorMeter(lat), 1])
 }
 
 const scaleXY = (m: Float64Array, sx: number, sy: number) => {
@@ -312,7 +314,7 @@ const labelFilter = (labels: CarLabels, selectedId?: string): maplibregl.FilterS
  * 3D car models on the map — minimal Tesla-style shells (sedan, SUV, van,
  * truck) with glass canopies, contact shadows, status rings and an optional
  * ink outline that matches `Drawing`. Rendered with plain WebGL in a custom
- * layer; assumes the mercator projection on a flat map.
+ * layer; assumes the mercator projection, and sits on `Terrain` when present.
  */
 export const Cars = module<CarsOptions>({
   name: 'Cars',
@@ -348,9 +350,13 @@ export const Cars = module<CarsOptions>({
     map.addSource(LAYER, { type: 'geojson', data: carCollection(single(options.data)) })
 
     const upload = (data: Float32Array) => {
-      const b = gl!.createBuffer()!
-      gl!.bindBuffer(gl!.ARRAY_BUFFER, b)
-      gl!.bufferData(gl!.ARRAY_BUFFER, data, gl!.STATIC_DRAW)
+      const context = gl!
+      const b = context.createBuffer()!
+      // may run outside render (onAdd): keep MapLibre's cached buffer binding valid
+      preserveState(context, () => {
+        context.bindBuffer(context.ARRAY_BUFFER, b)
+        context.bufferData(context.ARRAY_BUFFER, data, context.STATIC_DRAW)
+      })
       return b
     }
 
@@ -428,106 +434,112 @@ export const Cars = module<CarsOptions>({
       },
 
       render(g: GL, args: CustomRenderMethodInput) {
-        if (!carProg || !groundProg) return
-        const now = performance.now()
-        const o = state.options
-        const mpp = metersPerPixel(map.getCenter().lat, map.getZoom())
-        const groups = layout(state.shown(now), mpp)
-        state.groups = groups
-        syncLabels(groups)
-        if (!groups.length) return
-        const vp = args.defaultProjectionData.mainMatrix
-        const bearing = (map.getBearing() * Math.PI) / 180
-        const pitch = (map.getPitch() * Math.PI) / 180
-        const viewWorld: [number, number, number] = [
-          -Math.sin(bearing) * Math.sin(pitch),
-          -Math.cos(bearing) * Math.sin(pitch),
-          Math.cos(pitch),
-        ]
-        const pulse = (now % 1600) / 1600
-
-        const items = groups.map(({ leader: car, members }) => {
-          const kind = car.kind ?? 'sedan'
-          const k = exaggeration(car.coord[1])
-          return { car, count: members.length, kind, k, model: modelMatrix(car, k), mesh: carMesh(kind) }
-        })
-
-        releaseVao(g)
-        g.enable(g.BLEND)
-        g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA)
-        g.enable(g.DEPTH_TEST)
-        g.depthFunc(g.LEQUAL)
-
-        // ground: contact shadows, status rings, the selection halo — no depth writes
-        g.depthMask(false)
-        g.disable(g.CULL_FACE)
-        g.useProgram(groundProg.program)
-        const ground = (buffer: WebGLBuffer | null, matrix: Float64Array, color: number[], count: number) => {
-          bindGround(g, groundProg!, buffer!)
-          g.uniformMatrix4fv(groundProg!.uniform.u_matrix, false, new Float32Array(multiply(vp, matrix)))
-          g.uniform4f(groundProg!.uniform.u_color, color[0], color[1], color[2], color[3])
-          g.drawArrays(g.TRIANGLES, 0, count)
-        }
-        for (const { car, count, model, mesh } of items) {
-          if (o.shadow) ground(shadowBuf, scaleXY(model, mesh.width * 0.85, mesh.length * 0.66), [0, 0, 0, 0.28], SHADOW.length / 3)
-
-          const status = car.status && o.colors[car.status]
-          const selected = car.id === o.selectedId
-          const r = mesh.length * 0.62
-          if (status || selected) {
-            const [cr, cg, cb] = rgb(status || '#1769e0')
-            const a = selected ? 1 : 0.85
-            ground(ringBuf, scaleXY(model, r, r), [cr * a, cg * a, cb * a, a], RING.length / 3)
-            // a merged group gets a second, fainter ring: reads as a stack, not one car
-            if (count > 1) ground(ringBuf, scaleXY(model, r * 1.2, r * 1.2), [cr * 0.45, cg * 0.45, cb * 0.45, 0.45], RING.length / 3)
-            if (selected) {
-              const pr = r * (1 + 0.55 * pulse)
-              const pa = 0.35 * (1 - pulse)
-              ground(haloBuf, scaleXY(model, pr, pr), [cr * pa, cg * pa, cb * pa, pa], HALO.length / 3)
-            }
-          }
-        }
-        g.disableVertexAttribArray(groundProg.attrib.a_pos)
-        g.disableVertexAttribArray(groundProg.attrib.a_alpha)
-
-        // bodies: ink hull first (front faces culled → only the inflated rim shows), then the shell
-        g.depthMask(true)
-        g.enable(g.CULL_FACE)
-        g.frontFace(g.CCW)
-        g.useProgram(carProg.program)
-        const ink = o.outline ? rgb(o.outline) : undefined
-
-        for (const { car, kind, k, model } of items) {
-          const gpuMesh = meshFor(kind)
-          const matrix = new Float32Array(multiply(vp, model))
-          g.uniformMatrix4fv(carProg.uniform.u_matrix, false, matrix)
-
-          if (ink) {
-            g.cullFace(g.FRONT)
-            g.uniform1f(carProg.uniform.u_inflate, (o.outlineWidth * mpp) / k)
-            g.uniform4f(carProg.uniform.u_ink, ink[0], ink[1], ink[2], 1)
-            bindCar(g, carProg, gpuMesh.hull)
-            g.drawArrays(g.TRIANGLES, 0, gpuMesh.hullCount)
-          }
-
-          g.cullFace(g.BACK)
-          g.uniform1f(carProg.uniform.u_inflate, 0)
-          g.uniform4f(carProg.uniform.u_ink, 0, 0, 0, 0)
-          g.uniform3fv(carProg.uniform.u_light, toLocal(LIGHT_WORLD, car.heading ?? 0))
-          g.uniform3fv(carProg.uniform.u_view, toLocal(viewWorld, car.heading ?? 0))
-          g.uniform3fv(carProg.uniform.u_paint, rgb(car.color ?? o.paint))
-          bindCar(g, carProg, gpuMesh.buffer)
-          g.drawArrays(g.TRIANGLES, 0, gpuMesh.count)
-        }
-
-        for (const name of ['a_pos', 'a_normal', 'a_color', 'a_mat'])
-          if (carProg.attrib[name] >= 0) g.disableVertexAttribArray(carProg.attrib[name])
-        g.disable(g.CULL_FACE)
-        g.frontFace(g.CCW)
-
-        const gliding = o.tween > 0 && now - state.t0 < o.tween
-        if (gliding || o.selectedId) map.triggerRepaint()
+        preserveState(g, () => drawCars(g, args))
       },
+    }
+
+    function drawCars(g: GL, args: CustomRenderMethodInput) {
+      if (!carProg || !groundProg) return
+      const now = performance.now()
+      const o = state.options
+      const mpp = metersPerPixel(map.getCenter().lat, map.getZoom())
+      const groups = layout(state.shown(now), mpp)
+      state.groups = groups
+      syncLabels(groups)
+      if (!groups.length) return
+      const vp = args.defaultProjectionData.mainMatrix
+      const bearing = (map.getBearing() * Math.PI) / 180
+      const pitch = (map.getPitch() * Math.PI) / 180
+      const viewWorld: [number, number, number] = [
+        -Math.sin(bearing) * Math.sin(pitch),
+        -Math.cos(bearing) * Math.sin(pitch),
+        Math.cos(pitch),
+      ]
+      const pulse = (now % 1600) / 1600
+
+      const terrainAt = groundSampler(map)
+      const items = groups.map(({ leader: car, members }) => {
+        const kind = car.kind ?? 'sedan'
+        const k = exaggeration(car.coord[1])
+        const lift = terrainAt ? terrainAt(car.coord[0], car.coord[1]) : 0
+        return { car, count: members.length, kind, k, model: modelMatrix(car, k, lift), mesh: carMesh(kind) }
+      })
+
+      releaseVao(g)
+      g.enable(g.BLEND)
+      g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA)
+      g.enable(g.DEPTH_TEST)
+      g.depthFunc(g.LEQUAL)
+
+      // ground: contact shadows, status rings, the selection halo — no depth writes
+      g.depthMask(false)
+      g.disable(g.CULL_FACE)
+      g.useProgram(groundProg.program)
+      const ground = (buffer: WebGLBuffer | null, matrix: Float64Array, color: number[], count: number) => {
+        bindGround(g, groundProg!, buffer!)
+        g.uniformMatrix4fv(groundProg!.uniform.u_matrix, false, new Float32Array(multiply(vp, matrix)))
+        g.uniform4f(groundProg!.uniform.u_color, color[0], color[1], color[2], color[3])
+        g.drawArrays(g.TRIANGLES, 0, count)
+      }
+      for (const { car, count, model, mesh } of items) {
+        if (o.shadow) ground(shadowBuf, scaleXY(model, mesh.width * 0.85, mesh.length * 0.66), [0, 0, 0, 0.28], SHADOW.length / 3)
+
+        const status = car.status && o.colors[car.status]
+        const selected = car.id === o.selectedId
+        const r = mesh.length * 0.62
+        if (status || selected) {
+          const [cr, cg, cb] = rgb(status || '#1769e0')
+          const a = selected ? 1 : 0.85
+          ground(ringBuf, scaleXY(model, r, r), [cr * a, cg * a, cb * a, a], RING.length / 3)
+          // a merged group gets a second, fainter ring: reads as a stack, not one car
+          if (count > 1) ground(ringBuf, scaleXY(model, r * 1.2, r * 1.2), [cr * 0.45, cg * 0.45, cb * 0.45, 0.45], RING.length / 3)
+          if (selected) {
+            const pr = r * (1 + 0.55 * pulse)
+            const pa = 0.35 * (1 - pulse)
+            ground(haloBuf, scaleXY(model, pr, pr), [cr * pa, cg * pa, cb * pa, pa], HALO.length / 3)
+          }
+        }
+      }
+      g.disableVertexAttribArray(groundProg.attrib.a_pos)
+      g.disableVertexAttribArray(groundProg.attrib.a_alpha)
+
+      // bodies: ink hull first (front faces culled → only the inflated rim shows), then the shell
+      g.depthMask(true)
+      g.enable(g.CULL_FACE)
+      g.frontFace(g.CCW)
+      g.useProgram(carProg.program)
+      const ink = o.outline ? rgb(o.outline) : undefined
+
+      for (const { car, kind, k, model } of items) {
+        const gpuMesh = meshFor(kind)
+        const matrix = new Float32Array(multiply(vp, model))
+        g.uniformMatrix4fv(carProg.uniform.u_matrix, false, matrix)
+
+        if (ink) {
+          g.cullFace(g.FRONT)
+          g.uniform1f(carProg.uniform.u_inflate, (o.outlineWidth * mpp) / k)
+          g.uniform4f(carProg.uniform.u_ink, ink[0], ink[1], ink[2], 1)
+          bindCar(g, carProg, gpuMesh.hull)
+          g.drawArrays(g.TRIANGLES, 0, gpuMesh.hullCount)
+        }
+
+        g.cullFace(g.BACK)
+        g.uniform1f(carProg.uniform.u_inflate, 0)
+        g.uniform4f(carProg.uniform.u_ink, 0, 0, 0, 0)
+        g.uniform3fv(carProg.uniform.u_light, toLocal(LIGHT_WORLD, car.heading ?? 0))
+        g.uniform3fv(carProg.uniform.u_view, toLocal(viewWorld, car.heading ?? 0))
+        g.uniform3fv(carProg.uniform.u_paint, rgb(car.color ?? o.paint))
+        bindCar(g, carProg, gpuMesh.buffer)
+        g.drawArrays(g.TRIANGLES, 0, gpuMesh.count)
+      }
+
+      for (const name of ['a_pos', 'a_normal', 'a_color', 'a_mat'])
+        if (carProg.attrib[name] >= 0) g.disableVertexAttribArray(carProg.attrib[name])
+      g.disable(g.CULL_FACE)
+      g.frontFace(g.CCW)
+
+      const gliding = o.tween > 0 && now - state.t0 < o.tween
+      if (gliding || o.selectedId) map.triggerRepaint()
     }
 
     map.addLayer(layer)

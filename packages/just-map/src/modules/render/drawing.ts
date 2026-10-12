@@ -11,12 +11,14 @@ import { module } from '../../core/module'
 import type { JustMapEngine } from '../../core/engine'
 import { FONT } from '../../core/style'
 import { keepImage, type Sprite } from '../../utils/images'
+import { extrusionGroundSampler, type Ground } from '../../utils/terrain'
 import {
   cameraPosition,
   mercatorMeter,
   mercatorX,
   mercatorY,
   multiply,
+  preserveState,
   program,
   releaseVao,
   rgb,
@@ -89,9 +91,16 @@ const SOURCE = 'drawing'
 const GRID = 'drawing-grid'
 const EDGES = 'drawing-edges'
 const EDGE_MINZOOM = 13
+/** buildings sampled to notice the terrain under them changing */
+const PROBES = 24
 /** far-field tile budget relative to the near field: high enough that a pitched view stays at z13+ */
 const LOD_TILE_RATIO = 50
-const SOLID = ['drawing-buildings', EDGES]
+/**
+ * Edges draw before the buildings and write depth: a wall can't paint over its
+ * own (camera-pulled) outline, while a building in front still hides lines
+ * behind it. Edges after the extrusions break the extrusions under Terrain.
+ */
+const SOLID = [EDGES, 'drawing-buildings']
 const LABELS = ['drawing-street-label', 'drawing-place-label']
 
 const ROAD_CLASSES = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service']
@@ -297,16 +306,20 @@ export function buildingEdges(
   features: { id?: string | number; geometry: { type: string; coordinates?: unknown }; properties: Record<string, any> }[],
   origin: [number, number],
   offset = 0.1,
+  ground?: Ground,
 ): Float32Array {
   // the same building arrives once per tile it touches, clipped: keep its largest piece
-  const best = new Map<string | number, { rings: { ring: Ring; hole: boolean }[]; size: number; height: number; base: number }>()
+  const best = new Map<
+    string | number,
+    { rings: { ring: Ring; hole: boolean; poly: number }[]; size: number; height: number; base: number }
+  >()
   let anonymous = 0
 
   for (const f of features) {
     if (f.properties.hide_3d) continue
     const { type, coordinates } = f.geometry
     const polys = type === 'Polygon' ? [coordinates as Ring[]] : type === 'MultiPolygon' ? (coordinates as Ring[][]) : []
-    const rings = polys.flatMap(poly => poly.map((ring, i) => ({ ring, hole: i > 0 })))
+    const rings = polys.flatMap((poly, p) => poly.map((ring, i) => ({ ring, hole: i > 0, poly: p })))
     if (!rings.length) continue
 
     const size = rings.reduce((n, r) => n + r.ring.length, 0)
@@ -324,12 +337,30 @@ export function buildingEdges(
   const out: number[] = []
   const [ox, oy] = origin
   for (const { rings, height, base } of best.values()) {
-    for (const { ring, hole } of rings) {
+    // Terrain lifts each polygon by the ground under its outer ring's centroid,
+    // as MapLibre's extrusions do. Per polygon, not per feature: OpenMapTiles
+    // merges many buildings into one MultiPolygon feature.
+    const lifts = new Map<number, number>()
+    if (ground)
+      for (const { ring, hole, poly } of rings) {
+        if (hole) continue
+        const k = ring.length - 1 || 1
+        let lng = 0
+        let lat = 0
+        for (let i = 0; i < k; i++) {
+          lng += ring[i][0] / k
+          lat += ring[i][1] / k
+        }
+        lifts.set(poly, ground(lng, lat))
+      }
+
+    for (const { ring, hole, poly } of rings) {
+      const lift = lifts.get(poly) ?? 0
       const n = ring.length - 1 // closed ring: last == first
       if (n < 3) continue
       const meter = mercatorMeter(ring[0][1])
-      const top = (height + offset) * meter
-      const bottom = base * meter
+      const top = (lift + height + offset) * meter
+      const bottom = (lift + base) * meter
       const raw = ring.slice(0, n).map(([lng, lat]) => [mercatorX(lng) - ox, mercatorY(lat) - oy])
 
       // outward = away from the building's material: right of a positive-area ring, flipped for holes
@@ -416,18 +447,43 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
   let count = 0
   let origin: [number, number] = [0, 0]
   let rgba = [...rgb(color), opacity]
+  /** ground samples from the last build, re-checked while terrain tiles stream in */
+  let probes: [number, number, number][] = []
 
   const rebuild = () => {
     if (!gl || map.getZoom() < EDGE_MINZOOM - 0.5) return
     const c = map.getCenter()
     origin = [mercatorX(c.lng), mercatorY(c.lat)]
     const features = map.querySourceFeatures(SOURCE, { sourceLayer: 'building' })
-    const data = buildingEdges(features, origin)
+
+    const sampler = extrusionGroundSampler(map, SOURCE)
+    const samples: [number, number, number][] = []
+    const ground = sampler && ((lng: number, lat: number) => {
+      const z = sampler(lng, lat)
+      samples.push([lng, lat, z])
+      return z
+    })
+    const data = buildingEdges(features, origin, undefined, ground)
+    const step = Math.max(1, Math.floor(samples.length / PROBES))
+    probes = samples.filter((_, i) => i % step === 0)
+
     count = data.length / 3
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
+    const context = gl
+    // outside render: MapLibre caches its buffer binding, so put it back
+    preserveState(context, () => {
+      context.bindBuffer(context.ARRAY_BUFFER, buffer)
+      context.bufferData(context.ARRAY_BUFFER, data, context.STATIC_DRAW)
+    })
     map.triggerRepaint()
   }
+
+  // Terrain tiles load without map events (and a live map is never idle), so
+  // poll a handful of building grounds; when the DEM under them changes, rebuild.
+  const terrainWatch = window.setInterval(() => {
+    if (!probes.length || !map.getTerrain()) return
+    const sampler = extrusionGroundSampler(map, SOURCE)
+    if (sampler && probes.some(([lng, lat, z]) => Math.abs(sampler(lng, lat) - z) > 0.5)) rebuild()
+  }, 1000)
 
   const layer: CustomLayerInterface = {
     id: EDGES,
@@ -442,47 +498,52 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
     },
 
     onRemove() {
+      window.clearInterval(terrainWatch)
       if (gl && buffer) gl.deleteBuffer(buffer)
       if (gl && prog) gl.deleteProgram(prog.program)
       gl = undefined
     },
 
     render(context: GL, args: CustomRenderMethodInput) {
-      const zoom = map.getZoom()
-      if (!prog || !count || zoom < EDGE_MINZOOM) return
-      const g = context
-      // fade in over the first zoom level so edges don't pop
-      const fade = Math.min(1, zoom - EDGE_MINZOOM)
-      const a = rgba[3] * fade
-
-      releaseVao(g)
-      g.useProgram(prog.program)
-      const matrix = multiply(args.defaultProjectionData.mainMatrix, translation(origin[0], origin[1]))
-      g.uniformMatrix4fv(prog.uniform.u_matrix, false, new Float32Array(matrix))
-      // clip-space w of the map center = camera distance to what the user is looking at
-      const m = args.defaultProjectionData.mainMatrix
-      const c = map.getCenter()
-      const centerW = m[3] * mercatorX(c.lng) + m[7] * mercatorY(c.lat) + m[15]
-      g.uniform1f(prog.uniform.u_centerW, centerW)
-      const meter = mercatorMeter(c.lat)
-      const [cx, cy, cz] = cameraPosition(m)
-      g.uniform3f(prog.uniform.u_camera, cx - origin[0], cy - origin[1], cz)
-      g.uniform2f(prog.uniform.u_pull, PULL[0] * meter, PULL[1])
-      g.uniform4f(prog.uniform.u_color, rgba[0] * a, rgba[1] * a, rgba[2] * a, a)
-
-      g.enable(g.DEPTH_TEST)
-      g.depthFunc(g.LEQUAL)
-      g.depthMask(false)
-      g.enable(g.BLEND)
-      g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA)
-
-      g.bindBuffer(g.ARRAY_BUFFER, buffer)
-      const loc = prog.attrib.a_pos
-      g.enableVertexAttribArray(loc)
-      g.vertexAttribPointer(loc, 3, g.FLOAT, false, 0, 0)
-      g.drawArrays(g.LINES, 0, count)
-      g.disableVertexAttribArray(loc)
+      preserveState(context, () => drawEdges(context, args))
     },
+  }
+
+  function drawEdges(context: GL, args: CustomRenderMethodInput) {
+    const zoom = map.getZoom()
+    if (!prog || !count || zoom < EDGE_MINZOOM) return
+    const g = context
+    // fade in over the first zoom level so edges don't pop
+    const fade = Math.min(1, zoom - EDGE_MINZOOM)
+    const a = rgba[3] * fade
+
+    releaseVao(g)
+    g.useProgram(prog.program)
+    const matrix = multiply(args.defaultProjectionData.mainMatrix, translation(origin[0], origin[1]))
+    g.uniformMatrix4fv(prog.uniform.u_matrix, false, new Float32Array(matrix))
+    // clip-space w of the map center = camera distance to what the user is looking at
+    const m = args.defaultProjectionData.mainMatrix
+    const c = map.getCenter()
+    const centerW = m[3] * mercatorX(c.lng) + m[7] * mercatorY(c.lat) + m[15]
+    g.uniform1f(prog.uniform.u_centerW, centerW)
+    const meter = mercatorMeter(c.lat)
+    const [cx, cy, cz] = cameraPosition(m)
+    g.uniform3f(prog.uniform.u_camera, cx - origin[0], cy - origin[1], cz)
+    g.uniform2f(prog.uniform.u_pull, PULL[0] * meter, PULL[1])
+    g.uniform4f(prog.uniform.u_color, rgba[0] * a, rgba[1] * a, rgba[2] * a, a)
+
+    g.enable(g.DEPTH_TEST)
+    g.depthFunc(g.LEQUAL)
+    g.depthMask(true)
+    g.enable(g.BLEND)
+    g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA)
+
+    g.bindBuffer(g.ARRAY_BUFFER, buffer)
+    const loc = prog.attrib.a_pos
+    g.enableVertexAttribArray(loc)
+    g.vertexAttribPointer(loc, 3, g.FLOAT, false, 0, 0)
+    g.drawArrays(g.LINES, 0, count)
+    g.disableVertexAttribArray(loc)
   }
 
   return {
@@ -558,7 +619,7 @@ export const Drawing = module<DrawingOptions>({
     for (const l of specs) map.addLayer(l)
 
     const edges = edgeLayer(engine, options.palette.edge, options.edgeOpacity)
-    map.addLayer(edges.layer)
+    map.addLayer(edges.layer, 'drawing-buildings')
     const offReady = engine.on('ready', () => {
       if (state.options.occlude) stack(map, state.ids)
     })
@@ -569,10 +630,12 @@ export const Drawing = module<DrawingOptions>({
       timer = window.setTimeout(edges.rebuild, 120)
     }
     const onData = (e: { sourceId?: string; isSourceLoaded?: boolean }) => {
-      if (e.sourceId === SOURCE && e.isSourceLoaded) schedule()
+      // terrain tiles arriving move every building's ground, so they rebuild the edges too
+      if (e.isSourceLoaded && (e.sourceId === SOURCE || e.sourceId === map.getTerrain()?.source)) schedule()
     }
     map.on('sourcedata', onData)
     map.on('moveend', schedule)
+    map.on('terrain', schedule)
 
     const state: State = {
       options,
@@ -591,6 +654,7 @@ export const Drawing = module<DrawingOptions>({
         window.clearTimeout(timer)
         map.off('sourcedata', onData)
         map.off('moveend', schedule)
+        map.off('terrain', schedule)
         for (const id of state.ids) if (map.getLayer(id)) map.removeLayer(id)
         if (map.getSource(SOURCE)) map.removeSource(SOURCE)
         offGrid()
@@ -619,6 +683,7 @@ export const Drawing = module<DrawingOptions>({
       const specs = layers(options)
       for (const l of specs) map.addLayer(l, firstSibling)
       state.ids = [...specs.map(l => l.id), EDGES]
+      map.moveLayer(EDGES, 'drawing-buildings')
       if (options.occlude) stack(map, state.ids)
     }
     if (options.palette.grid !== prev.palette.grid || options.gridOpacity !== prev.gridOpacity) state.regrid(options)

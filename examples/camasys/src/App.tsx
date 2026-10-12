@@ -5,6 +5,7 @@ import { Cars } from '@justanarthur/just-map/modules/models'
 import type { CarsHandle } from '@justanarthur/just-map/modules/models'
 import { Gestures, Navigation } from '@justanarthur/just-map/modules/navigation'
 import { Drawing } from '@justanarthur/just-map/modules/render'
+import { Terrain } from '@justanarthur/just-map/modules/terrain'
 import { JustMap } from '@justanarthur/just-map/react'
 import { FLEET, fleetAt, type VehicleState } from './data/fleet'
 import { trips } from './data/trips'
@@ -14,6 +15,8 @@ const SPEEDS = [1, 3, 10]
 const STATUS_LABEL = { driving: 'Driving', idle: 'Idle', stopped: 'Parked' }
 const ROUTE_STYLING = { glow: false, width: 4, dash: false }
 const ROUTE_IDLE = { opacity: 0 }
+// pale relief so the hills read on the white drawing without muddying it
+const RELIEF = { shadow: '#8d99a3', highlight: '#ffffff', accent: '#b9c3ca' }
 
 const GESTURES = Gestures({ rotate3d: { speed: 0.3, pitchStep: 0.25 } })
 const NAVIGATION = Navigation()
@@ -27,6 +30,7 @@ export default function App() {
   const [edges, setEdges] = useState(true)
   const [grid, setGrid] = useState(true)
   const [outline, setOutline] = useState(true)
+  const [terrain, setTerrain] = useState(true)
   const [fleet, setFleet] = useState<VehicleState[]>(() => fleetAt(0))
 
   const engineRef = useRef<JustMapEngine | null>(null)
@@ -90,6 +94,10 @@ export default function App() {
   const selected = fleet.find(v => v.vehicle.id === selectedId)
 
   const drawing = useMemo(() => Drawing({ edges, waterGrid: grid }), [edges, grid])
+  const relief = useMemo(
+    () => Terrain({ enabled: terrain, hillshade: terrain, exaggeration: 1.5, hillshadeExaggeration: 0.3, hillshadeColors: RELIEF }),
+    [terrain],
+  )
   const cars = useMemo(
     () => Cars({ tween: 0, selectedId, outline: outline ? '#2e353d' : false, labels: 'all', onSelect: select }),
     [selectedId, outline, select],
@@ -106,7 +114,7 @@ export default function App() {
       }),
     [selected?.vehicle.trip.id],
   )
-  const modules = useMemo(() => [drawing, tracks, cars, GESTURES, NAVIGATION], [drawing, tracks, cars])
+  const modules = useMemo(() => [drawing, relief, tracks, cars, GESTURES, NAVIGATION], [drawing, relief, tracks, cars])
 
   const driving = fleet.filter(v => v.status === 'driving').length
 
@@ -201,6 +209,9 @@ export default function App() {
         </label>
         <label>
           <input type="checkbox" checked={outline} onChange={e => setOutline(e.target.checked)} /> Car outline
+        </label>
+        <label>
+          <input type="checkbox" checked={terrain} onChange={e => setTerrain(e.target.checked)} /> Terrain
         </label>
       </div>
     </div>

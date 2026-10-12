@@ -125,7 +125,8 @@ Changing `base` at runtime swaps the style while preserving every other module's
 **`Drawing`** — a complete base in the style of an architectural model drawing: pale land, white roads
 with hairline casings, teal water with a nautical grid, white extruded buildings with pen-drawn 3D
 edges (roof, base and corner lines). Use it instead of `Render` / `Style`, and set
-`camera.projection: 'mercator'` (the edge layer is mercator-only). Provides capability **`3d`**,
+`camera.projection: 'mercator'` (the edge layer is mercator-only). Works with `Terrain`: edges
+follow the ground under each building like MapLibre's extrusions do. Provides capability **`3d`**,
 so `Gestures` tilts and `FollowCam` pitches without `Terrain`.
 
 ```tsx
@@ -164,6 +165,7 @@ Roadmap: `Graticule`.
 | `maxzoom` | `12` — the DEM exists to z12; higher maxzoom starves covering |
 | `exaggeration` | `1.8` |
 | `hillshade` / `hillshadeExaggeration` | `true` / `0.35` |
+| `hillshadeColors` | `{ shadow: '#16202e', highlight: '#ffffff', accent: '#3a4a5e' }` — pale values suit `Drawing` |
 | `enabled` | `true` | `false` detaches terrain (map-type switching without remount) |
 
 **`Buildings`** — OSM 3D extrusions (OpenFreeMap planet tiles), `minzoom 14`, `opacity 0.7`,
@@ -234,7 +236,7 @@ Roadmap: `Clusters`, `Heatmap`.
 **`Cars`** — 3D car models on the map in a clean, minimal look: a smooth body, dark glass canopy,
 aero wheels, light bars, a soft contact shadow and a status ring on the ground. Four procedural
 body styles: `sedan`, `suv`, `van`, `truck`. Plain WebGL in a custom layer (no three.js);
-mercator, flat maps. Real size when zoomed in, never smaller than `minSize` px when zoomed out.
+mercator only; cars sit on `Terrain` when it's installed. Real size when zoomed in, never smaller than `minSize` px when zoomed out.
 
 | Option | Default |
 |---|---|

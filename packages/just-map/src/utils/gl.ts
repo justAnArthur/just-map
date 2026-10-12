@@ -81,6 +81,49 @@ export function program(gl: GL, vertex: string, fragment: string, attribs: strin
 }
 
 /**
+ * Runs `draw` and puts back every piece of GL state a custom layer here
+ * touches. MapLibre caches GL state and does not always re-apply it after a
+ * custom layer (with terrain it doesn't): a depth mask left off makes later
+ * fill-extrusions skip depth writes and draw their walls through their roofs.
+ */
+export function preserveState(gl: GL, draw: () => void) {
+  const on = (cap: number) => gl.isEnabled(cap)
+  const saved = {
+    depthTest: on(gl.DEPTH_TEST),
+    blend: on(gl.BLEND),
+    cull: on(gl.CULL_FACE),
+    depthMask: gl.getParameter(gl.DEPTH_WRITEMASK) as boolean,
+    depthFunc: gl.getParameter(gl.DEPTH_FUNC) as number,
+    blendSrcRgb: gl.getParameter(gl.BLEND_SRC_RGB) as number,
+    blendDstRgb: gl.getParameter(gl.BLEND_DST_RGB) as number,
+    blendSrcAlpha: gl.getParameter(gl.BLEND_SRC_ALPHA) as number,
+    blendDstAlpha: gl.getParameter(gl.BLEND_DST_ALPHA) as number,
+    cullFace: gl.getParameter(gl.CULL_FACE_MODE) as number,
+    frontFace: gl.getParameter(gl.FRONT_FACE) as number,
+    program: gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null,
+    buffer: gl.getParameter(gl.ARRAY_BUFFER_BINDING) as WebGLBuffer | null,
+    vao: 'bindVertexArray' in gl ? (gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null) : null,
+  }
+  const set = (cap: number, value: boolean) => (value ? gl.enable(cap) : gl.disable(cap))
+
+  try {
+    draw()
+  } finally {
+    set(gl.DEPTH_TEST, saved.depthTest)
+    set(gl.BLEND, saved.blend)
+    set(gl.CULL_FACE, saved.cull)
+    gl.depthMask(saved.depthMask)
+    gl.depthFunc(saved.depthFunc)
+    gl.blendFuncSeparate(saved.blendSrcRgb, saved.blendDstRgb, saved.blendSrcAlpha, saved.blendDstAlpha)
+    gl.cullFace(saved.cullFace)
+    gl.frontFace(saved.frontFace)
+    gl.useProgram(saved.program)
+    gl.bindBuffer(gl.ARRAY_BUFFER, saved.buffer)
+    if ('bindVertexArray' in gl) gl.bindVertexArray(saved.vao)
+  }
+}
+
+/**
  * Custom layers share MapLibre's context: on WebGL2 a MapLibre VAO may still be
  * bound, and attribute setup would silently rewrite it. Unbind before drawing.
  */
