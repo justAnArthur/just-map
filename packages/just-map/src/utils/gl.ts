@@ -25,6 +25,26 @@ export function multiply(a: ArrayLike<number>, b: ArrayLike<number>): Float64Arr
   return out
 }
 
+/**
+ * The eye position (in the matrix's world space) of a perspective view-projection
+ * matrix: the point that clips to x = y = w = 0. Exactly the camera the frame
+ * was rendered with — no drift from a separately computed altitude.
+ */
+export function cameraPosition(m: ArrayLike<number>): [number, number, number] {
+  // rows 0, 1, 3 of the column-major matrix: a·p = -d
+  const row = (r: number) => [m[r], m[4 + r], m[8 + r], m[12 + r]]
+  const [a, b, c] = [row(0), row(1), row(3)]
+  const det3 = (x: number[], y: number[], z: number[]) =>
+    x[0] * (y[1] * z[2] - y[2] * z[1]) - x[1] * (y[0] * z[2] - y[2] * z[0]) + x[2] * (y[0] * z[1] - y[1] * z[0])
+  const D = det3(a, b, c)
+  const rhs = [-a[3], -b[3], -c[3]]
+  const col = (k: number) => [a, b, c].map((r, i) => r.map((v, j) => (j === k ? rhs[i] : v)))
+  return [0, 1, 2].map(k => {
+    const [x, y, z] = col(k)
+    return det3(x, y, z) / D
+  }) as [number, number, number]
+}
+
 export const translation = (x: number, y: number, z = 0) =>
   new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1])
 

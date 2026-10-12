@@ -12,6 +12,7 @@ import type { JustMapEngine } from '../../core/engine'
 import { FONT } from '../../core/style'
 import { keepImage, type Sprite } from '../../utils/images'
 import {
+  cameraPosition,
   mercatorMeter,
   mercatorX,
   mercatorY,
@@ -277,6 +278,9 @@ function layers(o: DrawingOptions): LayerSpecification[] {
   return list
 }
 
+/** edge pull toward the camera: meters + fraction of the camera distance */
+const PULL: [number, number] = [0.5, 0.003]
+
 /** angle (deg) between incoming and outgoing ring edges above which a wall corner gets a vertical edge */
 const CORNER_DEG = 25
 
@@ -285,23 +289,27 @@ type Ring = [number, number][]
 /**
  * Line-segment list (xyz triplets, mercator units relative to `origin`) for
  * every building: roof outline, base outline and the vertical corner edges.
+ *
+ * Every line sits `offset` meters outside its building (out from the walls,
+ * up from the roof); the shader then pulls it a little toward the camera.
  */
 export function buildingEdges(
   features: { id?: string | number; geometry: { type: string; coordinates?: unknown }; properties: Record<string, any> }[],
   origin: [number, number],
+  offset = 0.1,
 ): Float32Array {
   // the same building arrives once per tile it touches, clipped: keep its largest piece
-  const best = new Map<string | number, { rings: Ring[]; size: number; height: number; base: number }>()
+  const best = new Map<string | number, { rings: { ring: Ring; hole: boolean }[]; size: number; height: number; base: number }>()
   let anonymous = 0
 
   for (const f of features) {
     if (f.properties.hide_3d) continue
     const { type, coordinates } = f.geometry
     const polys = type === 'Polygon' ? [coordinates as Ring[]] : type === 'MultiPolygon' ? (coordinates as Ring[][]) : []
-    const rings = polys.flat()
+    const rings = polys.flatMap(poly => poly.map((ring, i) => ({ ring, hole: i > 0 })))
     if (!rings.length) continue
 
-    const size = rings.reduce((n, r) => n + r.length, 0)
+    const size = rings.reduce((n, r) => n + r.ring.length, 0)
     const key = f.id ?? `anon-${anonymous++}`
     const prev = best.get(key)
     if (prev && prev.size >= size) continue
@@ -316,27 +324,53 @@ export function buildingEdges(
   const out: number[] = []
   const [ox, oy] = origin
   for (const { rings, height, base } of best.values()) {
-    for (const ring of rings) {
+    for (const { ring, hole } of rings) {
       const n = ring.length - 1 // closed ring: last == first
       if (n < 3) continue
       const meter = mercatorMeter(ring[0][1])
-      const top = (height + 0.05) * meter
+      const top = (height + offset) * meter
       const bottom = base * meter
-      const pts = ring.slice(0, n).map(([lng, lat]) => [mercatorX(lng) - ox, mercatorY(lat) - oy])
+      const raw = ring.slice(0, n).map(([lng, lat]) => [mercatorX(lng) - ox, mercatorY(lat) - oy])
+
+      // outward = away from the building's material: right of a positive-area ring, flipped for holes
+      let area = 0
+      for (let i = 0; i < n; i++) {
+        const [x0, y0] = raw[i]
+        const [x1, y1] = raw[(i + 1) % n]
+        area += x0 * y1 - x1 * y0
+      }
+      const side = (area > 0 ? 1 : -1) * (hole ? -1 : 1)
+      const normal = (a: number[], b: number[]) => {
+        const dx = b[0] - a[0]
+        const dy = b[1] - a[1]
+        const len = Math.hypot(dx, dy) || 1
+        return [(side * dy) / len, (-side * dx) / len]
+      }
+
+      const pts: number[][] = []
+      const corner: boolean[] = []
+      for (let i = 0; i < n; i++) {
+        const prev = raw[(i - 1 + n) % n]
+        const a = raw[i]
+        const next = raw[(i + 1) % n]
+        const n0 = normal(prev, a)
+        const n1 = normal(a, next)
+        // miter, capped so needle-sharp corners don't shoot out
+        const mx = n0[0] + n1[0]
+        const my = n0[1] + n1[1]
+        const cos = Math.max(0.35, (n0[0] * n1[0] + n0[1] * n1[1] + 1) / 2)
+        const mlen = Math.hypot(mx, my) || 1
+        const push = (offset * meter) / Math.sqrt(cos)
+        pts.push([a[0] + (mx / mlen) * push, a[1] + (my / mlen) * push])
+        corner.push(n0[0] * n1[0] + n0[1] * n1[1] < Math.cos((CORNER_DEG * Math.PI) / 180))
+      }
 
       for (let i = 0; i < n; i++) {
         const a = pts[i]
         const b = pts[(i + 1) % n]
         out.push(a[0], a[1], top, b[0], b[1], top)
         out.push(a[0], a[1], bottom, b[0], b[1], bottom)
-
-        const prev = pts[(i - 1 + n) % n]
-        const turn = Math.abs(
-          ((Math.atan2(b[1] - a[1], b[0] - a[0]) - Math.atan2(a[1] - prev[1], a[0] - prev[0]) + 3 * Math.PI) %
-            (2 * Math.PI)) -
-            Math.PI,
-        )
-        if (turn > (CORNER_DEG * Math.PI) / 180) out.push(a[0], a[1], bottom, a[0], a[1], top)
+        if (corner[i]) out.push(a[0], a[1], bottom, a[0], a[1], top)
       }
     }
   }
@@ -347,13 +381,19 @@ const EDGE_VS = `
 attribute vec3 a_pos;
 uniform mat4 u_matrix;
 uniform float u_centerW;
+uniform vec3 u_camera;
+uniform vec2 u_pull;
 varying float v_fade;
 void main() {
-  gl_Position = u_matrix * vec4(a_pos, 1.0);
+  // Slide toward the camera by a few meters in world space, so an edge wins
+  // against its own faces. Unlike a clip-space depth bias this is a real
+  // distance: a building across the street still hides the line.
+  vec3 toCamera = u_camera - a_pos;
+  float dist = length(toCamera);
+  vec3 pos = a_pos + toCamera / dist * min(0.5 * dist, u_pull.x + u_pull.y * dist);
+  gl_Position = u_matrix * vec4(pos, 1.0);
   // thin out toward the horizon, where a whole district of edges would merge into grey haze
   v_fade = clamp(2.6 - gl_Position.w / u_centerW, 0.0, 1.0);
-  // pull edges a hair toward the camera so they win against their own faces
-  gl_Position.z -= 0.0004 * gl_Position.w;
 }`
 
 const EDGE_FS = `
@@ -396,7 +436,7 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
 
     onAdd(_map, context) {
       gl = context
-      prog = program(gl, EDGE_VS, EDGE_FS, ['a_pos'], ['u_matrix', 'u_color', 'u_centerW'])
+      prog = program(gl, EDGE_VS, EDGE_FS, ['a_pos'], ['u_matrix', 'u_color', 'u_centerW', 'u_camera', 'u_pull'])
       buffer = gl.createBuffer()
       rebuild()
     },
@@ -424,6 +464,10 @@ function edgeLayer(engine: JustMapEngine, color: string, opacity: number): EdgeS
       const c = map.getCenter()
       const centerW = m[3] * mercatorX(c.lng) + m[7] * mercatorY(c.lat) + m[15]
       g.uniform1f(prog.uniform.u_centerW, centerW)
+      const meter = mercatorMeter(c.lat)
+      const [cx, cy, cz] = cameraPosition(m)
+      g.uniform3f(prog.uniform.u_camera, cx - origin[0], cy - origin[1], cz)
+      g.uniform2f(prog.uniform.u_pull, PULL[0] * meter, PULL[1])
       g.uniform4f(prog.uniform.u_color, rgba[0] * a, rgba[1] * a, rgba[2] * a, a)
 
       g.enable(g.DEPTH_TEST)
